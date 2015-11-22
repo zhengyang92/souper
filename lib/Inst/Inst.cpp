@@ -87,7 +87,7 @@ const std::vector<Inst *> &Inst::orderedOps() const {
 }
 
 std::string ReplacementContext::printInst(Inst *I, llvm::raw_ostream &Out,
-                                          bool printNames) {
+                                          bool printNames, bool Skip) {
   std::string Str;
   llvm::raw_string_ostream SS(Str);
 
@@ -119,15 +119,16 @@ std::string ReplacementContext::printInst(Inst *I, llvm::raw_ostream &Out,
     break;
   }
 
-  const std::vector<Inst *> &Ops = I->orderedOps();
-  for (unsigned Idx = 0; Idx != Ops.size(); ++Idx) {
-    if (Idx == 0)
-      OpsSS << " ";
-    else
-      OpsSS << ", ";
-    switch (I->K) {
+  if (!(Skip && !I->Needed)) {
+    const std::vector<Inst *> &Ops = I->orderedOps();
+    for (unsigned Idx = 0; Idx != Ops.size(); ++Idx) {
+      if (Idx == 0)
+        OpsSS << " ";
+      else
+        OpsSS << ", ";
+      switch (I->K) {
       default:
-        OpsSS << printInst(Ops[Idx], Out, printNames);
+        OpsSS << printInst(Ops[Idx], Out, printNames, Skip);
         break;
       case Inst::SAddWithOverflow:
       case Inst::UAddWithOverflow:
@@ -135,8 +136,9 @@ std::string ReplacementContext::printInst(Inst *I, llvm::raw_ostream &Out,
       case Inst::USubWithOverflow:
       case Inst::SMulWithOverflow:
       case Inst::UMulWithOverflow:
-        OpsSS << printInst(I->Ops[1]->Ops[Idx], Out, printNames);
+        OpsSS << printInst(I->Ops[1]->Ops[Idx], Out, printNames, Skip);
         break;
+      }
     }
   }
 
@@ -144,6 +146,12 @@ std::string ReplacementContext::printInst(Inst *I, llvm::raw_ostream &Out,
   assert(InstNames.find(I) == InstNames.end());
   assert(NameToBlock.find(InstName) == NameToBlock.end());
   setInst(InstName, I);
+
+  if (Skip && !I->Needed) {
+    Out << "%" << InstName << ":i" << I->Width << " = var\n";
+    SS << "%" << InstName;
+    return SS.str();
+  }
 
   // Skip the elements of overflow instruction tuple in souper IR
   switch (I->K) {
@@ -203,22 +211,23 @@ void ReplacementContext::clear() {
 }
 
 void ReplacementContext::printPCs(const std::vector<InstMapping> &PCs,
-                                  llvm::raw_ostream &Out, bool printNames) {
+                                  llvm::raw_ostream &Out, bool printNames,
+                                  bool Skip) {
   for (const auto &PC : PCs) {
-    std::string SRef = printInst(PC.LHS, Out, printNames);
-    std::string RRef = printInst(PC.RHS, Out, printNames);
+    std::string SRef = printInst(PC.LHS, Out, printNames, Skip);
+    std::string RRef = printInst(PC.RHS, Out, printNames, Skip);
     Out << "pc " << SRef << " " << RRef << '\n';
   }
 }
 
 void ReplacementContext::printBlockPCs(const BlockPCs &BPCs,
                                        llvm::raw_ostream &Out,
-                                       bool printNames) {
+                                       bool printNames, bool Skip) {
   for (auto &BPC : BPCs) {
     assert(BPC.B && "NULL Block pointer!");
     std::string BlockName = printBlock(BPC.B, Out);
-    std::string SRef = printInst(BPC.PC.LHS, Out, printNames);
-    std::string RRef = printInst(BPC.PC.RHS, Out, printNames);
+    std::string SRef = printInst(BPC.PC.LHS, Out, printNames, Skip);
+    std::string RRef = printInst(BPC.PC.RHS, Out, printNames, Skip);
     Out << "blockpc %" << BlockName << " " << BPC.PredIdx << " ";
     Out << SRef << " " << RRef << '\n';
   }
@@ -617,6 +626,12 @@ int Inst::getCost(Inst::Kind K) {
     case Const:
     case Phi:
       return 0;
+    case UDiv:
+    case SDiv:
+    case URem:
+    case SRem:
+    case Select:
+      return 3;
     case BSwap:
     case CtPop:
     case Cttz:
@@ -627,6 +642,32 @@ int Inst::getCost(Inst::Kind K) {
   }
 }
 
+// fixme make depth bounding optional
+
+static void markUnNeeded(Inst *I) {
+  // fixme instset
+  I->Needed = false;
+  for (auto Op : I->Ops)
+    markUnNeeded(Op);
+}
+
+static void markNeeded(Inst *I, int Depth) {
+  if (Depth < 1) {
+    if (I->K == Inst::Const)
+      I->Needed = true;
+    return;
+  }
+  Depth--;
+  I->Needed = true;
+  for (auto Op : I->Ops)
+    markNeeded(Op, Depth);
+}
+
+void souper::setNeeded(Inst *I) {
+  markUnNeeded(I);
+  markNeeded(I, ExprDepth);
+}
+
 void souper::PrintReplacement(llvm::raw_ostream &Out,
                               const BlockPCs &BPCs,
                               const std::vector<InstMapping> &PCs,
@@ -634,11 +675,13 @@ void souper::PrintReplacement(llvm::raw_ostream &Out,
   assert(Mapping.LHS);
   assert(Mapping.RHS);
 
+  setNeeded(Mapping.LHS);
+
   ReplacementContext Context;
-  Context.printPCs(PCs, Out, printNames);
-  Context.printBlockPCs(BPCs, Out, printNames);
-  std::string SRef = Context.printInst(Mapping.LHS, Out, printNames);
-  std::string RRef = Context.printInst(Mapping.RHS, Out, printNames);
+  Context.printPCs(PCs, Out, printNames, true);
+  Context.printBlockPCs(BPCs, Out, printNames, true);
+  std::string SRef = Context.printInst(Mapping.LHS, Out, printNames, true);
+  std::string RRef = Context.printInst(Mapping.RHS, Out, printNames, false);
   Out << "cand " << SRef << " " << RRef << '\n';
 }
 
@@ -659,9 +702,11 @@ void souper::PrintReplacementLHS(llvm::raw_ostream &Out,
   assert(LHS);
   assert(Context.empty());
 
-  Context.printPCs(PCs, Out, printNames);
-  Context.printBlockPCs(BPCs, Out, printNames);
-  std::string SRef = Context.printInst(LHS, Out, printNames);
+  setNeeded(LHS);
+
+  //Context.printPCs(PCs, Out, printNames);
+  //Context.printBlockPCs(BPCs, Out, printNames);
+  std::string SRef = Context.printInst(LHS, Out, printNames, true);
   Out << "infer " << SRef << '\n';
 }
 
@@ -676,7 +721,7 @@ std::string souper::GetReplacementLHSString(const BlockPCs &BPCs,
 
 void souper::PrintReplacementRHS(llvm::raw_ostream &Out, Inst *RHS,
                                  ReplacementContext &Context, bool printNames) {
-  std::string SRef = Context.printInst(RHS, Out, printNames);
+  std::string SRef = Context.printInst(RHS, Out, printNames, false);
   Out << "result " << SRef << '\n';
 }
 

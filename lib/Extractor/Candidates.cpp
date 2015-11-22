@@ -98,7 +98,6 @@ struct ExprBuilder {
   bool isLoopEntryPoint(PHINode *Phi);
   Inst *makeArrayRead(Value *V);
   Inst *buildConstant(Constant *c);
-  Inst *buildGEP(Inst *Ptr, gep_type_iterator begin, gep_type_iterator end);
   Inst *build(Value *V);
   void addPathConditions(BlockPCs &BPCs, std::vector<InstMapping> &PCs,
                          std::unordered_set<Block *> &VisitedBlocks,
@@ -176,34 +175,6 @@ Inst *ExprBuilder::buildConstant(Constant *c) {
     // Constant{Expr, Vector, DataSequential, Struct, Array}
     return makeArrayRead(c);
   }
-}
-
-Inst *ExprBuilder::buildGEP(Inst *Ptr, gep_type_iterator begin,
-                            gep_type_iterator end) {
-  unsigned PSize = DL.getPointerSizeInBits();
-  for (auto i = begin; i != end; ++i) {
-    if (StructType *ST = dyn_cast<StructType>(*i)) {
-      const StructLayout *SL = DL.getStructLayout(ST);
-      ConstantInt *CI = cast<ConstantInt>(i.getOperand());
-      uint64_t Addend = SL->getElementOffset((unsigned) CI->getZExtValue());
-      if (Addend != 0) {
-        Ptr = IC.getInst(Inst::Add, PSize,
-                         {Ptr, IC.getConst(APInt(PSize, Addend))});
-      }
-    } else {
-      SequentialType *SET = cast<SequentialType>(*i);
-      uint64_t ElementSize =
-        DL.getTypeStoreSize(SET->getElementType());
-      Value *Operand = i.getOperand();
-      Inst *Index = get(Operand);
-      if (PSize > Index->Width)
-        Index = IC.getInst(Inst::SExt, PSize, {Index});
-      Inst *Addend = IC.getInst(
-          Inst::Mul, PSize, {Index, IC.getConst(APInt(PSize, ElementSize))});
-      Ptr = IC.getInst(Inst::Add, PSize, {Ptr, Addend});
-    }
-  }
-  return Ptr;
 }
 
 Inst *ExprBuilder::build(Value *V) {
@@ -481,6 +452,8 @@ Inst *ExprBuilder::get(Value *V) {
   if (!E) {
     E = build(V);
   }
+  // TODO: avoid adding the origin if it's already there
+  EBC.Origins.insert(std::pair<Inst *, Value *>(E, V));
   return E;
 }
 

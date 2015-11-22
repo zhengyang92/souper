@@ -23,6 +23,8 @@
 #include <vector>
 #include <map>
 
+static const int ExprDepth = 2;
+
 namespace souper {
 
 struct Block {
@@ -104,6 +106,7 @@ struct Inst : llvm::FoldingSetNode {
   std::string Name;
   std::vector<Inst *> Ops;
   mutable std::vector<Inst *> OrderedOps;
+  bool Needed;
 
   bool operator<(const Inst &I) const;
   const std::vector<Inst *> &orderedOps() const;
@@ -114,7 +117,6 @@ struct Inst : llvm::FoldingSetNode {
   static std::string getKnownBitsString(llvm::APInt Zero, llvm::APInt One);
   static Kind getKind(std::string Name);
 
-  static bool isAssociative(Kind K);
   static bool isCommutative(Kind K);
   static int getCost(Kind K);
   llvm::APInt KnownZeros;
@@ -151,10 +153,10 @@ class ReplacementContext {
 
 public:
   void printPCs(const std::vector<InstMapping> &PCs,
-                llvm::raw_ostream &Out, bool printNames);
+                llvm::raw_ostream &Out, bool printNames, bool Skip);
   void printBlockPCs(const BlockPCs &BPCs,
-                     llvm::raw_ostream &Out, bool printNames);
-  std::string printInst(Inst *I, llvm::raw_ostream &Out, bool printNames);
+                     llvm::raw_ostream &Out, bool printNames, bool Skip);
+  std::string printInst(Inst *I, llvm::raw_ostream &Out, bool printNames, bool Skip);
   std::string printBlock(Block *B, llvm::raw_ostream &Out);
   Inst *getInst(llvm::StringRef Name);
   void setInst(llvm::StringRef Name, Inst *I);
@@ -187,6 +189,8 @@ public:
 
   Inst *getInst(Inst::Kind K, unsigned Width, const std::vector<Inst *> &Ops);
 };
+
+void setNeeded(Inst *I);
 
 void PrintReplacement(llvm::raw_ostream &Out, const BlockPCs &BPCs,
                       const std::vector<InstMapping> &PCs, InstMapping Mapping,

@@ -58,7 +58,7 @@ TEST(InstTest, Print) {
   Inst *I1AI2MI3 = IC.getInst(Inst::Mul, 64, {I1AI2, I3});
   ReplacementContext Context;
 
-  EXPECT_EQ("%1", Context.printInst(I1AI2MI3, SS, /*printNames=*/false));
+  EXPECT_EQ("%1", Context.printInst(I1AI2MI3, SS, /*printNames=*/false, false));
   EXPECT_EQ("%0:i64 = add 1:i64, 2:i64\n"
             "%1:i64 = mul 3:i64, %0\n", SS.str());
 }

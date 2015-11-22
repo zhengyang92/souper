@@ -1,0 +1,8 @@
+; REQUIRES: solver
+; RUN: %souper-check -souper-infer-iN -infer-rhs %solver %s | FileCheck %s
+; CHECK: result 0:i64
+
+%0:i64 = var
+%1:i64 = add %0, %0
+%2:i64 = and %1, 1
+infer %2

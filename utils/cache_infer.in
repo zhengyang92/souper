@@ -26,6 +26,8 @@ eval { require Sys::CPU; Sys::CPU->import(); };
 my $NPROCS = 4;
 $NPROCS = Sys::CPU::cpu_count() if defined(&Sys::CPU::cpu_count);
 
+# $NPROCS = 1;
+
 sub usage() {
     print <<"END";
 Options:
@@ -53,18 +55,13 @@ my $solver = $ENV{"SOUPER_SOLVER"};
 die $need_solver unless $solver;
 
 my $OPTS = "";
-$OPTS .= "-souper-infer-i1=false " if $ENV{"SOUPER_NO_INFER_I1"};
 $OPTS .= "-souper-infer-iN " if $ENV{"SOUPER_INFER_INT"};
-$OPTS .= "-souper-infer-nop " if $ENV{"SOUPER_INFER_NOP"};
-$OPTS .= "-souper-infer-unary " if $ENV{"SOUPER_INFER_UNARY"};
+
+$OPTS .= "-souper-synthesis-wiring-iterations=100 ";
+$OPTS .= "-souper-infer-inst ";
+$OPTS .= "-souper-synthesis-comps=const,const,select,shl,lshr,ashr,and,or,xor,add,sub,slt,ult,sle,ule,eq,ne";
 
 my $check = "@CMAKE_BINARY_DIR@/souper-check -solver-timeout=15 ${solver}";
-
-sub runit ($) {
-    my $cmd = shift;
-    my $res = (system "$cmd");
-    return $? >> 8;
-}
 
 my $r = Redis->new();
 $r->ping || die "no server?";
@@ -74,8 +71,11 @@ sub infer($) {
     (my $k) = @_;
     (my $fh, my $tmpfn) = File::Temp::tempfile();
     print $fh $k;
+    my $cmd = "${check} -infer-rhs $OPTS";
+    # print STDERR "\n$k\n\n";
+    print STDERR "$cmd\n";
     $fh->flush();
-    open INF, "${check} -infer-rhs $OPTS < $tmpfn |";
+    open INF, "$cmd < $tmpfn |";
     my $ok = 0;
     my $failed = 0;
     my $output = "";

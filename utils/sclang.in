@@ -90,6 +90,7 @@ if ($souper) {
 
     if (exists $ENV{"SOUPER_DEBUG"}) {
         push @ARGV, ("-mllvm", "-souper-debug");
+        push @ARGV, ("-mllvm", "-souper-debug-level=2");
     }
 
     if (exists $ENV{"SOUPER_EXPLOIT_BLOCKPCS"}) {

@@ -1,0 +1,8 @@
+; REQUIRES: solver
+; RUN: %souper-check -souper-infer-iN -infer-rhs %solver %s | FileCheck %s
+; CHECK: result 4294967294:i32
+
+%0:i32 = var
+%1:i32 = or %0, 2147483647
+%2:i32 = add %1, %1
+infer %2

@@ -40,8 +40,13 @@ using namespace llvm;
 namespace {
 
 static cl::opt<bool> NoInfer("souper-no-infer",
-    cl::desc("Populate the external cache, but don't infer replacements"),
+    cl::desc("Populate the external cache, but don't infer replacements (default=false)"),
     cl::init(false));
+
+static cl::opt<bool> InferI1("souper-infer-i1",
+    cl::desc("Infer Boolean values (default=true)"),
+    cl::init(true));
+
 static cl::opt<bool> InferInts("souper-infer-iN",
     cl::desc("Infer iN integers for N>1 (default=false)"),
     cl::init(false));
@@ -57,12 +62,37 @@ public:
   BaseSolver(std::unique_ptr<SMTLIBSolver> SMTSolver, unsigned Timeout)
       : SMTSolver(std::move(SMTSolver)), Timeout(Timeout) {}
 
+private:
+  void getInputs(Inst *I, std::set<Inst *> &Inputs, std::set<Inst *> &PhiOps) {
+    if (Inputs.insert(I).second) {
+      if (I->K == Inst::Phi)
+        for (auto Op : I->Ops)
+          PhiOps.insert(Op);
+      for (auto Op : I->Ops)
+        getInputs(Op, Inputs, PhiOps);
+    }
+  }
+
+  int costHelper(Inst *I, std::set<Inst *> &Visited) {
+    if (!Visited.insert(I).second)
+      return 0;
+    int Cost = Inst::getCost(I->K);
+    for (auto Op : I->Ops)
+      Cost += costHelper(Op, Visited);
+    return Cost;
+  }
+
+  int cost(Inst *I) {
+    std::set<Inst *> Visited;
+    return costHelper(I, Visited);
+  }
+
   std::error_code infer(const BlockPCs &BPCs,
                         const std::vector<InstMapping> &PCs,
                         Inst *LHS, Inst *&RHS, InstContext &IC) override {
     std::error_code EC;
 
-    if (LHS->Width == 1) {
+    if (LHS->Width == 1 && InferI1) {
       std::vector<Inst *>Guesses { IC.getConst(APInt(1, true)),
                                    IC.getConst(APInt(1, false)) };
       for (auto I : Guesses) {

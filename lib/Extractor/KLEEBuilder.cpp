@@ -955,6 +955,7 @@ CandidateExpr souper::GetCandidateExprForReplacement(
 
   CandidateExpr CE;
   ExprBuilder EB(CE.Arrays, CE.ArrayVars);
+
   // Build LHS
   ref<Expr> LHS = EB.get(Mapping.LHS);
   ref<Expr> Ante = klee::ConstantExpr::alloc(1, 1);
