@@ -45,6 +45,9 @@ OutputFilename("o", cl::desc("Override output filename"),
 static cl::opt<bool> StaticProfile("souper-static-profile", cl::init(false),
     cl::desc("Static profiling of Souper optimizations (default=false)"));
 
+static cl::opt<bool> PrintNZP("print-nzp", cl::init(false),
+    cl::desc("Print NZP bits (default=false)"));
+
 static cl::opt<bool>
 Check("check", cl::desc("Check input for expected results"),
     cl::init(false));

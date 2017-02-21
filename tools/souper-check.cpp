@@ -27,6 +27,10 @@ static cl::opt<bool> PrintCounterExample("print-counterexample",
     cl::desc("Print counterexample (default=true)"),
     cl::init(true));
 
+static cl::opt<bool> NZP("infer-nzp",
+    cl::desc("Compute NZP for the candidate (default=false)"),
+    cl::init(false));
+
 static cl::opt<bool> PrintRepl("print-replacement",
     cl::desc("Print the replacement, if valid (default=false)"),
     cl::init(false));
@@ -66,6 +70,21 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
 
   if (ParseOnly || ParseLHSOnly) {
     llvm::outs() << "; parsing successful\n";
+    return 0;
+  }
+
+  if (NZP) {
+    APInt NonNegative;
+    if (std::error_code EC = S->nonNegative(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                            NonNegative, IC)) {
+      llvm::errs() << EC.message() << '\n';
+    }
+    std::string s;
+    if (NonNegative == APInt::getNullValue(Rep.Mapping.LHS->Width))
+      s = Inst::getMoreKnownBitsString(0, 1, 0);
+    else
+      s = Inst::getMoreKnownBitsString(0, 0, 0);
+    llvm::outs() << "known from souper: " << s << "\n";
     return 0;
   }
 
