@@ -203,7 +203,7 @@ if (0) {
 	}
     }
 }
-    
+
 sub llvm_known($) {
     (my $opt) = @_;
     (my $fh1, my $fn1) = File::Temp::tempfile();
@@ -242,9 +242,6 @@ sub go($) {
 	$lk = $known{$opt};
 	if (!defined($lk)) {
 	    $lk = "";
-	    for (my $i=0; $i<length($sk); $i++) {
-		$lk .= "x";
-	    }
 	}
     } else {
 	$lk = llvm_known($opt);
@@ -254,17 +251,14 @@ sub go($) {
     my $print = 0;
     if ($sk ne $lk) {
 	$print = 1;
-	die unless length($lk) == length($sk);
 	my $llvm_stronger = 0;
 	my $souper_stronger = 0;
-	for (my $i=0; $i<length($lk); $i++) {
-	    if ((substr($sk,$i,1) eq "x") && (substr($lk,$i,1) ne "x")) {
-		$llvm_stronger = 1;
-	    }
-	    if ((substr($lk,$i,1) eq "x") && (substr($sk,$i,1) ne "x")) {
-		$souper_stronger = 1;
-	    }
-	}
+        if ($sk eq "n") {
+            $souper_stronger = 1;
+        }
+        if ($lk eq "n") {
+            $llvm_stronger = 1;
+        }
 	if ($llvm_stronger && $souper_stronger) {
 	    $ret .= "neither is stronger";
 	} elsif ($llvm_stronger) {
@@ -277,18 +271,19 @@ sub go($) {
 	$ret .= "\n";
     }
     $ret .= "\n";
-    $ret .= "; total static profile = $sprofiles{$opt}\n";
-    my %h = %{$sprofile_locs{$opt}};
-    foreach my $k (sort { $h{$b} <=> $h{$a} } keys %h) {
-        next if ($k eq "");
-        $ret .= "; sprofile $h{$k} \"$k\"\n";
-    }
-    $ret .= "; total dynamic profile = $dprofiles{$opt}\n";
-    %h = %{$dprofile_locs{$opt}};
-    foreach my $k (sort { $h{$b} <=> $h{$a} } keys %h) {
-        next if ($k eq "");
-        $ret .= "; dprofile $h{$k} \"$k\"\n";
-    }
+    #TODO: Fix it
+#    $ret .= "; total static profile = $sprofiles{$opt}\n";
+#    my %h = %{$sprofile_locs{$opt}};
+#    foreach my $k (sort { $h{$b} <=> $h{$a} } keys %h) {
+#        next if ($k eq "");
+#        $ret .= "; sprofile $h{$k} \"$k\"\n";
+#    }
+#    $ret .= "; total dynamic profile = $dprofiles{$opt}\n";
+#    %h = %{$dprofile_locs{$opt}};
+#    foreach my $k (sort { $h{$b} <=> $h{$a} } keys %h) {
+#        next if ($k eq "");
+#        $ret .= "; dprofile $h{$k} \"$k\"\n";
+#    }
     $ret .= "------------------------------------------------------\n\n";
     print $ret if $print;
     exit();
