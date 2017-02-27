@@ -95,7 +95,7 @@ public:
                               InstContext &IC) override {
     unsigned W = LHS->Width;
     NonNegative = APInt::getNullValue(W);
-    APInt NonNegativeGuess = NonNegative | APInt::getOneBitSet(W, 0);
+    APInt NonNegativeGuess = NonNegative | APInt::getOneBitSet(W, W-1);
     if (testNonNegative(BPCs, PCs, NonNegativeGuess, LHS, IC))
       NonNegative = APInt::getNullValue(W);
     else
