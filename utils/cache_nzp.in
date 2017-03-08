@@ -271,19 +271,18 @@ sub go($) {
 	$ret .= "\n";
     }
     $ret .= "\n";
-    #TODO: Fix it
-#    $ret .= "; total static profile = $sprofiles{$opt}\n";
-#    my %h = %{$sprofile_locs{$opt}};
-#    foreach my $k (sort { $h{$b} <=> $h{$a} } keys %h) {
-#        next if ($k eq "");
-#        $ret .= "; sprofile $h{$k} \"$k\"\n";
-#    }
-#    $ret .= "; total dynamic profile = $dprofiles{$opt}\n";
-#    %h = %{$dprofile_locs{$opt}};
-#    foreach my $k (sort { $h{$b} <=> $h{$a} } keys %h) {
-#        next if ($k eq "");
-#        $ret .= "; dprofile $h{$k} \"$k\"\n";
-#    }
+    $ret .= "; total static profile = $sprofiles{$opt}\n";
+    my %h = %{$sprofile_locs{$opt}};
+    foreach my $k (sort { $h{$b} <=> $h{$a} } keys %h) {
+        next if ($k eq "");
+        $ret .= "; sprofile $h{$k} \"$k\"\n";
+    }
+    $ret .= "; total dynamic profile = $dprofiles{$opt}\n";
+    %h = %{$dprofile_locs{$opt}};
+    foreach my $k (sort { $h{$b} <=> $h{$a} } keys %h) {
+        next if ($k eq "");
+        $ret .= "; dprofile $h{$k} \"$k\"\n";
+    }
     $ret .= "------------------------------------------------------\n\n";
     print $ret if $print;
     exit();
@@ -298,7 +297,7 @@ sub wait_for_one() {
     $num_running--;
 }
 
-foreach my $opt (sort bysprofile keys %toprint) {
+foreach my $opt (sort bylen keys %toprint) {
     wait_for_one() unless $num_running < $NPROCS;
     die unless $num_running < $NPROCS;
     my $pid = fork();
