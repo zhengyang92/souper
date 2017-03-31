@@ -16,7 +16,8 @@
 
 import fileinput, sys, copy
 
-widths, nonNegative = dict(), dict()
+#widths, nonNegative = dict(), dict()
+widths, Negative = dict(), dict()
 pcmap, argmap = dict(), dict()
 cand = None
 needsResult = False
@@ -227,12 +228,12 @@ def propagateArgNames(insts):
             if len(ops):
                 assert len(ops) <= 2, "atmost two masks expected, got %d" % len(ops)
                 if len(ops) == 1:
-                    if "n" in ops[0] or "z" in ops[0] or "p" in ops[0]:
+                    if "n" in ops[0] or "z" in ops[0] or "p" in ops[0] or "-" in ops[0]:
                         parseNZP(ops[0], newreg, int(widthValue))
                 elif len(ops) == 2:
-                    if "n" in ops[0] or "z" in ops[0] or "p" in ops[0]:
+                    if "n" in ops[0] or "z" in ops[0] or "p" in ops[0] or "-" in ops[0]:
                         parseNZP(ops[0], newreg, int(widthValue))
-                    elif "n" in ops[1] or "z" in ops[1] or "p" in ops[1]:
+                    elif "n" in ops[1] or "z" in ops[1] or "p" in ops[1] or "-" in ops[1]:
                         parseNZP(ops[1], newreg, int(widthValue))
             counter += 1
             continue
@@ -390,22 +391,40 @@ def rewriteOps(inst, newregs, ops):
            assert op[0] in newregs, "unknown reg %s, reordering bug in %s" % (op[0], i)
            ops[j][0] = newregs[op[0]]
 
+#def parseNZP(s,reg, width):
+#    assert "(" in s and ")" in s
+#    s = s.strip("(").strip(")")
+#    nonNegativeMask = 0
+#    bit = 0
+#    for c in s[::]:
+#        if c == 'n':
+#            while (bit < width-1):
+#                nonNegativeMask += 1<<bit
+#                bit += 1
+#            print "; for " + str(bit) + " bit value " + s
+#            if nonNegativeMask != 0:
+#                nonNegative[reg] = nonNegativeMask
+#                print ";   val = val & " + str(nonNegativeMask)
+#            else:
+#                print ";   no non negative mask needed"
+#            print
+
 def parseNZP(s,reg, width):
     assert "(" in s and ")" in s
     s = s.strip("(").strip(")")
-    nonNegativeMask = 0
+    NegativeMask = 0
     bit = 0
     for c in s[::]:
-        if c == 'n':
+        if c == '-':
             while (bit < width-1):
-                nonNegativeMask += 1<<bit
+                NegativeMask += 1<<bit
                 bit += 1
             print "; for " + str(bit) + " bit value " + s
-            if nonNegativeMask != 0:
-                nonNegative[reg] = nonNegativeMask
-                print ";   val = val & " + str(nonNegativeMask)
+            if NegativeMask != 0:
+                Negative[reg] = NegativeMask
+                print ";   val = val & " + str(NegativeMask)
             else:
-                print ";   no non negative mask needed"
+                print ";   no negative mask needed"
             print
 
 def printFuncHeader():
@@ -414,18 +433,18 @@ def printFuncHeader():
         regtmps[reg] = reg
     masks = ""
     for i, reg in enumerate(argmap.values()):
-        if reg in nonNegative:
+        if reg in Negative:
             regnum = reg[1:]
             w = widths[reg]
             old = regtmps[reg]
             name = "%t3_" + regnum
             regtmps[reg] = name
-            masks = "  " + old + " = and " + w + " " + name + ", " + str(nonNegative[reg]) + "\n" +\
-            "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_nonNegative\n" + masks
+            masks = "  " + old + " = and " + w + " " + name + ", " + str(Negative[reg]) + "\n" +\
+            "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_Negative\n" + masks
     # global declarations: dummy store, intrinsics
     print "target datalayout = \"e-m:e-i64:64-f80:128-n8:16:32:64-S128\"\n"
     for i, reg in enumerate(argmap.values()):
-        print "@glob_" + reg[1:] + "_nonNegative = external global " + widths[reg]
+        print "@glob_" + reg[1:] + "_Negative = external global " + widths[reg]
     for decl in intrdecl.values():
         print decl
     print "\ndefine " + cand[1] + " @foo(",

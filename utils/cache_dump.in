@@ -38,6 +38,7 @@ sub usage() {
     print <<'END';
 Options:
   -nzp         Infer NZP bits
+  -neg         Infer Neg bits
   -merge       Merge optimizations that differ only in bitwidths and constants
   -noopts      Dump not-optimizations instead of optimizations
   -parse       Ensure that each LHS in the cache parses as Souper
@@ -59,6 +60,7 @@ my $NOOPTS = 0;
 my $SORT = "size";
 my $REDUCE = 0;
 my $NZP = 0;
+my $NEG = 0;
 my $MERGE = 0;
 my $PARSE = 0;
 my $TRIAGE = 0;
@@ -70,6 +72,7 @@ GetOptions(
     "noopts" => \$NOOPTS,
     "parse" => \$PARSE,
     "nzp" => \$NZP,
+    "neg" => \$NEG,
     "sort=s" => \$SORT,
     "raw"  => \$RAW,
     "reduce" => \$REDUCE,
@@ -162,7 +165,24 @@ sub nzp ($) {
     close $fh;
     unlink $tmpfn;
 }
-+
+
+sub neg ($) {
+    (my $opt) = @_;
+    (my $fh, my $tmpfn) = File::Temp::tempfile();
+    print $fh $opt;
+    $fh->flush();
+    my $arg = "-infer-neg";
+    my $cmd = "${check} $solver $arg < $tmpfn 2>/dev/null |";
+    # print "<${cmd}>\n";
+    open INF, $cmd;
+    while (my $line = <INF>) {
+       print $line;
+    }
+    close INF;
+    close $fh;
+    unlink $tmpfn;
+}
+
 my $need_solver = <<END;
 $0 requires the SOUPER_SOLVER environment variable to be defined, e.g. as
 -stp-path=/path/to/stp
@@ -546,7 +566,8 @@ print "\n\n";
 foreach my $opt (sort $byx keys %toprint) {
     print "$opt";
     print "\n";
-    nzp($opt) if $NZP;
+    #nzp($opt) if $NZP;
+    neg($opt) if $NEG;
     print "\n";
     print "; total static profile = $sprofiles{$opt}\n";
     my %h = %{$sprofile_locs{$opt}};
