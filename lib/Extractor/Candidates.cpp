@@ -725,7 +725,10 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI,
         auto DL = F.getParent()->getDataLayout();
         bool Negative = 0;
         Negative = isKnownNegative(V, DL);
-        llvm::outs() << "known at return: " << Inst::getMoreKnownBitsString(0, 0, 0, Negative) << "\n";
+        if (Negative)
+          llvm::outs() << "known at return: " << "(negative)" << "\n";
+        else
+          llvm::outs() << "known at return: " << "" << "\n";
       }
       if (I.getType()->isIntegerTy())
         BCS->Replacements.emplace_back(&I, InstMapping(EB.get(&I), 0));
