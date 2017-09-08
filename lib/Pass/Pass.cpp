@@ -24,6 +24,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
@@ -33,6 +34,7 @@
 #include "souper/SMTLIB2/Solver.h"
 #include "souper/Tool/GetSolverFromArgs.h"
 #include "souper/Tool/CandidateMapUtils.h"
+#include "set"
 
 using namespace souper;
 using namespace llvm;
@@ -76,11 +78,40 @@ static bool dumpAllReplacements() {
   return DebugSouperPass && (DebugLevel > 1);
 }
 
-struct SouperPass : public FunctionPass {
+#ifdef DYNAMIC_PROFILE_ALL
+static const bool DynamicProfileAll = true;
+#else
+static const bool DynamicProfileAll = false;
+#endif
+
+struct SouperPass : public ModulePass {
   static char ID;
 
-  void dynamicProfile(LLVMContext &C, Module *M, std::string LHS,
-                      std::string SrcLoc, BasicBlock::iterator BI) {
+public:
+  SouperPass() : ModulePass(ID) {
+    if (!S) {
+      S = GetSolverFromArgs(KV);
+      if (StaticProfile && !KV)
+        KV = new KVStore;
+      if (!S)
+        report_fatal_error("Souper requires a solver to be specified");
+    }
+  }
+
+  void getAnalysisUsage(AnalysisUsage &Info) const {
+    Info.addRequired<LoopInfoWrapperPass>();
+  }
+
+  void dynamicProfile(Function *F, CandidateReplacement &Cand) {
+    std::string Str;
+    llvm::raw_string_ostream Loc(Str);
+    Instruction *I = Cand.Origin.getInstruction();
+    I->getDebugLoc().print(Loc);
+    ReplacementContext Context;
+    std::string LHS = GetReplacementLHSString(Cand.BPCs, Cand.PCs,
+                                              Cand.Mapping.LHS, Context);
+    LLVMContext &C = F->getContext();
+    Module *M = F->getParent();
     Function *RegisterFunc = M->getFunction("_souper_profile_register");
     if (!RegisterFunc) {
       Type *RegisterArgs[] = {
@@ -94,13 +125,14 @@ struct SouperPass : public FunctionPass {
                                       "_souper_profile_register", M);
     }
 
+    // todo: should check if this string exists before creating it
     Constant *Repl = ConstantDataArray::getString(C, LHS, true);
     Constant *ReplVar = new GlobalVariable(*M, Repl->getType(), true,
         GlobalValue::PrivateLinkage, Repl, "");
     Constant *ReplPtr = ConstantExpr::getPointerCast(ReplVar,
         PointerType::getInt8PtrTy(C));
 
-    Constant *Field = ConstantDataArray::getString(C, "dprofile " + SrcLoc,
+    Constant *Field = ConstantDataArray::getString(C, "dprofile " + Loc.str(),
                                                    true);
     Constant *FieldVar = new GlobalVariable(*M, Field->getType(), true,
                                             GlobalValue::PrivateLinkage, Field,
@@ -126,9 +158,12 @@ struct SouperPass : public FunctionPass {
 
     appendToGlobalCtors(*M, Ctor, 0);
 
+    BasicBlock::iterator BI(I);
+    while (isa<PHINode>(*BI))
+      ++BI;
     new AtomicRMWInst(AtomicRMWInst::Add, CntVar,
-                      ConstantInt::get(C, APInt(64, 1)), Monotonic, CrossThread,
-                      BI);
+                      ConstantInt::get(C, APInt(64, 1)), AtomicOrdering::Monotonic,
+                      SyncScope::System, I);
   }
 
   Value *getValue(Inst *I, Instruction *ReplacedInst,
@@ -222,40 +257,22 @@ struct SouperPass : public FunctionPass {
     }
   }
 
-public:
-  SouperPass() : FunctionPass(ID) {
-    if (!S) {
-      S = GetSolverFromArgs(KV);
-      if (StaticProfile && !KV)
-        KV = new KVStore;
-      if (!S)
-        report_fatal_error("Souper requires a solver to be specified");
-    }
-  }
-
-  void getAnalysisUsage(AnalysisUsage &Info) const {
-    Info.addRequired<LoopInfoWrapperPass>();
-    Info.addRequired<DominatorTreeWrapperPass>();
-    // TODO there should be some setPreserves that we can add here
-  }
-
-  bool runOnFunction(Function &F) {
-    bool changed = false;
+  bool runOnFunction(Function *F) {
+    bool Changed = false;
     InstContext IC;
     ExprBuilderContext EBC;
     CandidateMap CandMap;
-
-    LoopInfo *LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
-    DominatorTree *DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
-
-    FunctionCandidateSet CS = ExtractCandidatesFromPass(&F, LI, IC, EBC);
+    LoopInfo *LI = &getAnalysis<LoopInfoWrapperPass>(*F).getLoopInfo();
+    if (!LI)
+      report_fatal_error("getLoopInfo() failed");
+    FunctionCandidateSet CS = ExtractCandidatesFromPass(F, LI, IC, EBC);
 
     std::string FunctionName;
-    if (F.hasLocalLinkage()) {
+    if (F->hasLocalLinkage()) {
       FunctionName =
-        (F.getParent()->getModuleIdentifier() + ":" + F.getName()).str();
+        (F->getParent()->getModuleIdentifier() + ":" + F->getName()).str();
     } else {
-      FunctionName = F.getName();
+      FunctionName = F->getName();
     }
 
     if (dumpAllReplacements()) {
@@ -289,6 +306,11 @@ public:
         KV->hIncrBy(GetReplacementLHSString(Cand.BPCs, Cand.PCs,
                                             Cand.Mapping.LHS, Context),
                     HField, 1);
+      }
+      if (DynamicProfileAll) {
+        dynamicProfile(F, Cand);
+        Changed = true;
+        continue;
       }
       if (std::error_code EC =
           S->infer(Cand.BPCs, Cand.PCs, Cand.Mapping.LHS,
@@ -339,16 +361,8 @@ public:
         BasicBlock::iterator BI = ReplacedInst;
         ReplaceInstWithValue(ReplacedInst->getParent()->getInstList(), BI,
                              NewVal);
-        if (DynamicProfile) {
-          std::string Str;
-          llvm::raw_string_ostream Loc(Str);
-          ReplacedInst->getDebugLoc().print(Loc);
-          ReplacementContext Context;
-          dynamicProfile (F.getContext(), F.getParent(),
-                          GetReplacementLHSString(Cand.BPCs, Cand.PCs,
-                                                  Cand.Mapping.LHS, Context),
-                          Loc.str(), BI);
-        }
+        if (DynamicProfile)
+          dynamicProfile(F, Cand);
         changed = true;
       } else {
         if (DebugSouperPass)
@@ -359,8 +373,21 @@ public:
         ++ReplaceCount;
     }
 
-    return changed;
+    return Changed;
   }
+
+  bool runOnModule(Module &M) {
+    bool Changed = false;
+    // get the list first since the dynamic profiling adds functions as it goes
+    std::vector<Function *> FL;
+    for (auto &I : M)
+      FL.push_back((Function *)&I);
+    for (auto *F : FL)
+      if (!F->isDeclaration())
+        Changed = runOnFunction(F) || Changed;
+    return Changed;
+  }
+
 };
 
 char SouperPass::ID = 0;
@@ -388,5 +415,10 @@ static void registerSouperPass(
 }
 
 static llvm::RegisterStandardPasses
+#ifdef DYNAMIC_PROFILE_ALL
+RegisterSouperOptimizer(llvm::PassManagerBuilder::EP_OptimizerLast,
+                        registerSouperPass);
+#else
 RegisterSouperOptimizer(llvm::PassManagerBuilder::EP_Peephole,
                         registerSouperPass);
+#endif

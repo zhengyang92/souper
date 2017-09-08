@@ -28,6 +28,7 @@
 #include "llvm/IR/Type.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/KnownBits.h"
 #include "souper/Inst/Inst.h"
 #include "souper/Util/UniqueNameSet.h"
 #include <map>
@@ -41,9 +42,9 @@ static llvm::cl::opt<bool> ExploitBPCs(
     "souper-exploit-blockpcs",
     llvm::cl::desc("Exploit block path conditions (default=false)"),
     llvm::cl::init(false));
-static llvm::cl::opt<bool> HarvestKnownBits(
-    "souper-harvest-known-bits",
-    llvm::cl::desc("Perform known bits analysis (default=true)"),
+static llvm::cl::opt<bool> HarvestDataFlowFacts(
+    "souper-harvest-dataflow-facts",
+    llvm::cl::desc("Perform data flow analysis (default=true)"),
     llvm::cl::init(true));
 
 using namespace llvm;
@@ -99,6 +100,7 @@ struct ExprBuilder {
   Inst *makeArrayRead(Value *V);
   Inst *buildConstant(Constant *c);
   Inst *build(Value *V);
+  void addPC(BasicBlock *BB, BasicBlock *Pred, std::vector<InstMapping> &PCs);
   void addPathConditions(BlockPCs &BPCs, std::vector<InstMapping> &PCs,
                          std::unordered_set<Block *> &VisitedBlocks,
                          BasicBlock *BB);
@@ -155,12 +157,21 @@ Inst *ExprBuilder::makeArrayRead(Value *V) {
   if (Opts.NamedArrays)
     Name = V->getName();
   unsigned Width = DL.getTypeSizeInBits(V->getType());
-  APInt KnownZero(Width, 0, false), KnownOne(Width, 0, false);
-  if (HarvestKnownBits)
+  KnownBits Known(Width);
+  bool NonZero = false, NonNegative = false, PowOfTwo = false, Negative = false;
+  unsigned NumSignBits = 1;
+  if (HarvestDataFlowFacts)
     if (V->getType()->isIntOrIntVectorTy() ||
-        V->getType()->getScalarType()->isPointerTy())
-      computeKnownBits(V, KnownZero, KnownOne, DL);
-  return IC.createVar(Width, Name, KnownZero, KnownOne);
+        V->getType()->getScalarType()->isPointerTy()) {
+      computeKnownBits(V, Known, DL);
+      NonZero = isKnownNonZero(V, DL);
+      NonNegative = isKnownNonNegative(V, DL);
+      PowOfTwo = isKnownToBeAPowerOfTwo(V, DL);
+      Negative = isKnownNegative(V, DL);
+      NumSignBits = ComputeNumSignBits(V, DL);
+    }
+  return IC.createVar(Width, Name, Known.Zero, Known.One, NonZero, NonNegative,
+                      PowOfTwo, Negative, NumSignBits);
 }
 
 Inst *ExprBuilder::buildConstant(Constant *c) {
@@ -176,6 +187,36 @@ Inst *ExprBuilder::buildConstant(Constant *c) {
     return makeArrayRead(c);
   }
 }
+
+#if 0
+Inst *ExprBuilder::buildGEP(Inst *Ptr, gep_type_iterator begin,
+                            gep_type_iterator end) {
+  unsigned PSize = DL.getPointerSizeInBits();
+  for (auto i = begin; i != end; ++i) {
+    if (StructType *ST = i.getStructTypeOrNull()) {
+      const StructLayout *SL = DL.getStructLayout(ST);
+      ConstantInt *CI = cast<ConstantInt>(i.getOperand());
+      uint64_t Addend = SL->getElementOffset((unsigned) CI->getZExtValue());
+      if (Addend != 0) {
+        Ptr = IC.getInst(Inst::Add, PSize,
+                         {Ptr, IC.getConst(APInt(PSize, Addend))});
+      }
+    } else {
+      SequentialType *SET = cast<SequentialType>(i.getIndexedType());
+      uint64_t ElementSize =
+        DL.getTypeStoreSize(SET->getElementType());
+      Value *Operand = i.getOperand();
+      Inst *Index = get(Operand);
+      if (PSize > Index->Width)
+        Index = IC.getInst(Inst::SExt, PSize, {Index});
+      Inst *Addend = IC.getInst(
+          Inst::Mul, PSize, {Index, IC.getConst(APInt(PSize, ElementSize))});
+      Ptr = IC.getInst(Inst::Add, PSize, {Ptr, Addend});
+    }
+  }
+  return Ptr;
+}
+#endif
 
 Inst *ExprBuilder::build(Value *V) {
   if (auto C = dyn_cast<Constant>(V)) {
@@ -464,6 +505,31 @@ void emplace_back_dedup(std::vector<InstMapping> &PCs, Inst *LHS, Inst *RHS) {
   PCs.emplace_back(LHS, RHS);
 }
 
+void ExprBuilder::addPC(BasicBlock *BB, BasicBlock *Pred,
+                        std::vector<InstMapping> &PCs) {
+  if (auto Branch = dyn_cast<BranchInst>(Pred->getTerminator())) {
+    if (Branch->isConditional()) {
+      emplace_back_dedup(
+          PCs, get(Branch->getCondition()),
+          IC.getConst(APInt(1, Branch->getSuccessor(0) == BB)));
+    }
+  } else if (auto Switch = dyn_cast<SwitchInst>(Pred->getTerminator())) {
+    Inst *Cond = get(Switch->getCondition());
+    ConstantInt *Case = Switch->findCaseDest(BB);
+    if (Case) {
+      emplace_back_dedup(PCs, Cond, get(Case));
+    } else {
+      // default
+      Inst *DI = IC.getConst(APInt(1, true));
+      for (auto I = Switch->case_begin(), E = Switch->case_end(); I != E;
+           ++I) {
+        Inst *CI = IC.getInst(Inst::Ne, 1, {Cond, get(I->getCaseValue())});
+        emplace_back_dedup(PCs, CI, DI);
+      }
+    }
+  }
+}
+
 // Collect path conditions for a basic block. 
 // There are two kinds of path conditions, which correspond to
 // two Souper instruction kinds, pc and blockpc, respectively.
@@ -522,27 +588,7 @@ void ExprBuilder::addPathConditions(BlockPCs &BPCs,
                                     BasicBlock *BB) {
   if (auto Pred = BB->getSinglePredecessor()) {
     addPathConditions(BPCs, PCs, VisitedBlocks, Pred);
-    if (auto Branch = dyn_cast<BranchInst>(Pred->getTerminator())) {
-      if (Branch->isConditional()) {
-        emplace_back_dedup(
-            PCs, get(Branch->getCondition()),
-            IC.getConst(APInt(1, Branch->getSuccessor(0) == BB)));
-      }
-    } else if (auto Switch = dyn_cast<SwitchInst>(Pred->getTerminator())) {
-      Inst *Cond = get(Switch->getCondition());
-      ConstantInt *Case = Switch->findCaseDest(BB);
-      if (Case) {
-        emplace_back_dedup(PCs, Cond, get(Case));
-      } else {
-        // default
-        Inst *DI = IC.getConst(APInt(1, true));
-        for (auto I = Switch->case_begin(), E = Switch->case_end(); I != E;
-             ++I) {
-          Inst *CI = IC.getInst(Inst::Ne, 1, {Cond, get(I.getCaseValue())});
-          emplace_back_dedup(PCs, CI, DI);
-        }
-      }
-    }
+    addPC(BB, Pred, PCs);
   } else if (ExploitBPCs) {
     // BB is the entry of the function.
     if (pred_begin(BB) == pred_end(BB))
@@ -569,8 +615,15 @@ void ExprBuilder::addPathConditions(BlockPCs &BPCs,
 
     VisitedBlocks.insert(BI.B);
     for (unsigned i = 0; i < BI.Preds.size(); ++i) {
+      auto Pred = BI.Preds[i];
       std::vector<InstMapping> PCs;
-      addPathConditions(BPCs, PCs, VisitedBlocks, BI.Preds[i]);
+      if (Pred->getSinglePredecessor()) {
+        addPathConditions(BPCs, PCs, VisitedBlocks, Pred);
+      }
+      else {
+        // In case the predecessor is a br or switch instruction.
+        addPC(BB, Pred, PCs);
+      }
       for (auto PC : PCs)
         BPCs.emplace_back(BlockPCMapping(BI.B, i, PC));
     }

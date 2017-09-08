@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 2.8)
 project(Souper)
 
+set(CMAKE_MACOSX_RPATH NEW)
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING
       "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
@@ -21,7 +23,7 @@ execute_process(
 set(LLVM_CXXFLAGS "${LLVM_CXXFLAGS} -fno-exceptions -fno-rtti -DLLVM_ENABLE_STATS=true")
 
 execute_process(
-  COMMAND ${LLVM_CONFIG_EXECUTABLE} --libs bitreader bitwriter instrumentation ipo irreader linker mc mcparser objcarcopts option profiledata scalaropts target transformutils
+  COMMAND ${LLVM_CONFIG_EXECUTABLE} --libs
   OUTPUT_VARIABLE LLVM_LIBS
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
@@ -196,6 +198,19 @@ add_library(souperPass SHARED
   lib/Pass/Pass.cpp
 )
 
+add_library(souperPassProfileAll SHARED
+  ${KLEE_EXPR_FILES}
+  ${SOUPER_EXTRACTOR_FILES}
+  ${SOUPER_INST_FILES}
+  ${SOUPER_KVSTORE_FILES}
+  ${SOUPER_PARSER_FILES}
+  ${SOUPER_SMTLIB2_FILES}
+  ${SOUPER_TOOL_FILES}
+  ${SOUPER_INFER_FILES}
+  lib/Pass/Pass.cpp
+)
+target_compile_definitions(souperPassProfileAll PRIVATE DYNAMIC_PROFILE_ALL=1)
+
 add_executable(clang-souper
   tools/clang-souper.cpp
 )
@@ -232,7 +247,7 @@ add_executable(parser_tests
   unittests/Parser/ParserTests.cpp
 )
 
-set_target_properties(souper internal-solver-test lexer-test parser-test souper-check souperExtractor souperInfer souperInst souperKVStore souperParser souperSMTLIB2 souperTool souperPass kleeExpr
+set_target_properties(souper internal-solver-test lexer-test parser-test souper-check souperExtractor souperInfer souperInst souperKVStore souperParser souperSMTLIB2 souperTool souperPass souperPassProfileAll kleeExpr
   PROPERTIES COMPILE_FLAGS "${LLVM_CXXFLAGS}")
 set_target_properties(souperClangTool clang-souper
   PROPERTIES COMPILE_FLAGS "${CLANG_CXXFLAGS} ${LLVM_CXXFLAGS}")
@@ -249,6 +264,7 @@ target_link_libraries(souperParser souperInst ${LLVM_LIBS} ${LLVM_LDFLAGS})
 target_link_libraries(souperSMTLIB2 ${LLVM_LIBS} ${LLVM_LDFLAGS})
 target_link_libraries(souperTool souperExtractor souperSMTLIB2)
 target_link_libraries(souperPass ${PASS_LDFLAGS} ${HIREDIS_LIBRARY})
+target_link_libraries(souperPassProfileAll ${PASS_LDFLAGS} ${HIREDIS_LIBRARY})
 target_link_libraries(souper souperExtractor souperKVStore souperParser souperSMTLIB2 souperTool kleeExpr ${HIREDIS_LIBRARY})
 target_link_libraries(internal-solver-test souperSMTLIB2)
 target_link_libraries(lexer-test souperParser)
@@ -274,7 +290,7 @@ configure_file(
 
 add_custom_target(check
   COMMAND ${CMAKE_BINARY_DIR}/run_lit
-  DEPENDS extractor_tests inst_tests parser-test parser_tests profileRuntime souper souper-check souperPass)
+  DEPENDS extractor_tests inst_tests parser-test parser_tests profileRuntime souper souper-check souperPass souperPassProfileAll)
 
 find_program(GO_EXECUTABLE NAMES go DOC "go executable")
 if(NOT GO_EXECUTABLE STREQUAL "GO_EXECUTABLE-NOTFOUND")
@@ -294,10 +310,12 @@ add_library(profileRuntime STATIC
   runtime/souperPassProfile.c)
 
 set(SOUPER_PASS ${CMAKE_BINARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}souperPass${CMAKE_SHARED_LIBRARY_SUFFIX})
+set(SOUPER_PASS_PROFILE_ALL ${CMAKE_BINARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}souperPassProfileAll${CMAKE_SHARED_LIBRARY_SUFFIX})
 set(PROFILE_LIBRARY ${CMAKE_BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}profileRuntime${CMAKE_STATIC_LIBRARY_SUFFIX})
 configure_file(${CMAKE_SOURCE_DIR}/utils/sclang.in ${CMAKE_BINARY_DIR}/sclang @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/sclang.in ${CMAKE_BINARY_DIR}/sclang++ @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/reduce.in ${CMAKE_BINARY_DIR}/reduce @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/cache_dump.in ${CMAKE_BINARY_DIR}/cache_dump @ONLY)
+configure_file(${CMAKE_SOURCE_DIR}/utils/cache_import.in ${CMAKE_BINARY_DIR}/cache_import @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/cache_infer.in ${CMAKE_BINARY_DIR}/cache_infer @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/souper2llvm.in ${CMAKE_BINARY_DIR}/souper2llvm @ONLY)

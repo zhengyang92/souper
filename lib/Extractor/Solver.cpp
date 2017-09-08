@@ -47,16 +47,32 @@ static cl::opt<bool> InferI1("souper-infer-i1",
     cl::desc("Infer Boolean values (default=true)"),
     cl::init(true));
 
+static cl::opt<bool> InferNop("souper-infer-nop",
+    cl::desc("Infer that the output is the same as an input value (default=false)"),
+    cl::init(false));
 static cl::opt<bool> InferInts("souper-infer-iN",
     cl::desc("Infer iN integers for N>1 (default=false)"),
     cl::init(false));
 static cl::opt<bool> InferInsts("souper-infer-inst",
     cl::desc("Infer instructions (default=false)"),
     cl::init(false));
+static cl::opt<int> MaxLHSSize("souper-max-lhs-size",
+    cl::desc("Max size of LHS (in bytes) to put in external cache"),
+    cl::init(1024));
 
 class BaseSolver : public Solver {
   std::unique_ptr<SMTLIBSolver> SMTSolver;
   unsigned Timeout;
+
+  void findVars(Inst *I, std::set<Inst *> &Visited,
+                std::vector<Inst *> &Guesses, unsigned Width) {
+    if (!Visited.insert(I).second)
+      return;
+    if (I->K == Inst::Var && I->Width == Width)
+      Guesses.emplace_back(I);
+    for (auto Op : I->Ops)
+      findVars(Op, Visited, Guesses, Width);
+  }
 
 public:
   BaseSolver(std::unique_ptr<SMTLIBSolver> SMTSolver, unsigned Timeout)
@@ -99,9 +115,11 @@ private:
         // TODO: we can trivially synthesize an i1 undef by checking for validity
         // of both guesses
         InstMapping Mapping(LHS, I);
+        std::string Query = BuildQuery(BPCs, PCs, Mapping, 0);
+        if (Query.empty())
+          return std::make_error_code(std::errc::value_too_large);
         bool IsSat;
-        EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0), IsSat, 0, 0,
-                                      Timeout);
+        EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
         if (EC)
           return EC;
         if (!IsSat) {
@@ -117,6 +135,8 @@ private:
       Inst *I = IC.createVar(LHS->Width, "constant");
       InstMapping Mapping(LHS, I);
       std::string Query = BuildQuery(BPCs, PCs, Mapping, &ModelInsts, /*Negate=*/true);
+      if (Query.empty())
+        return std::make_error_code(std::errc::value_too_large);
       bool IsSat;
       EC = SMTSolver->isSatisfiable(Query, IsSat, ModelInsts.size(),
                                     &ModelVals, Timeout);
@@ -134,12 +154,36 @@ private:
         assert(Const && "there must be a model for the constant");
         // Check if the constant is valid for all inputs
         InstMapping ConstMapping(LHS, Const);
-        EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, ConstMapping, 0),
-                                      IsSat, 0, 0, Timeout);
+        std::string Query = BuildQuery(BPCs, PCs, ConstMapping, 0);
+        if (Query.empty())
+          return std::make_error_code(std::errc::value_too_large);
+        EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
         if (EC)
           return EC;
         if (!IsSat) {
           RHS = Const;
+          return EC;
+        }
+      }
+    }
+
+    if (InferNop) {
+      std::vector<Inst *> Guesses;
+      std::set<Inst *> Visited;
+      findVars(LHS, Visited, Guesses, LHS->Width);
+      for (auto I : Guesses) {
+        if (LHS == I)
+          continue;
+        InstMapping Mapping(LHS, I);
+        std::string Query = BuildQuery(BPCs, PCs, Mapping, 0);
+        if (Query.empty())
+          return std::make_error_code(std::errc::value_too_large);
+        bool IsSat;
+        EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
+        if (EC)
+          return EC;
+        if (!IsSat) {
+          RHS = I;
           return EC;
         }
       }
@@ -165,6 +209,8 @@ private:
     if (Model && SMTSolver->supportsModels()) {
       std::vector<Inst *> ModelInsts;
       std::string Query = BuildQuery(BPCs, PCs, Mapping, &ModelInsts);
+      if (Query.empty())
+        return std::make_error_code(std::errc::value_too_large);
       bool IsSat;
       std::vector<llvm::APInt> ModelVals;
       std::error_code EC = SMTSolver->isSatisfiable(
@@ -179,10 +225,11 @@ private:
       }
       return EC;
     } else {
+      std::string Query = BuildQuery(BPCs, PCs, Mapping, 0);
+      if (Query.empty())
+        return std::make_error_code(std::errc::value_too_large);
       bool IsSat;
-      std::error_code EC =
-        SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
-                                 IsSat, 0, 0, Timeout);
+      std::error_code EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
       IsValid = !IsSat;
       return EC;
     }
@@ -278,6 +325,8 @@ public:
                         Inst *LHS, Inst *&RHS, InstContext &IC) override {
     ReplacementContext Context;
     std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
+    if (LHSStr.length() > MaxLHSSize)
+      return std::make_error_code(std::errc::value_too_large);
     std::string S;
     if (KV->hGet(LHSStr, "result", S)) {
       ++ExternalHits;
