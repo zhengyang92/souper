@@ -100,6 +100,7 @@ public:
 
   void getAnalysisUsage(AnalysisUsage &Info) const {
     Info.addRequired<LoopInfoWrapperPass>();
+    Info.addRequired<DominatorTreeWrapperPass>();
   }
 
   void dynamicProfile(Function *F, CandidateReplacement &Cand) {
@@ -265,6 +266,9 @@ public:
     LoopInfo *LI = &getAnalysis<LoopInfoWrapperPass>(*F).getLoopInfo();
     if (!LI)
       report_fatal_error("getLoopInfo() failed");
+    DominatorTree *DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
+    if (!DT)
+      report_fatal_error("getDomTree() failed");
     FunctionCandidateSet CS = ExtractCandidatesFromPass(F, LI, IC, EBC);
 
     std::string FunctionName;
@@ -341,7 +345,7 @@ public:
       IRBuilder<> Builder(ReplacedInst->getParent());
       Builder.SetInsertPoint(ReplacedInst);
       Value *NewVal = getValue(Cand.Mapping.RHS, ReplacedInst, EBC, DT,
-                               Builder, F.getParent());
+                               Builder, F->getParent());
       if (!NewVal) {
         if (DebugSouperPass)
           errs() << "\"\n; replacement failed\n";
@@ -358,12 +362,12 @@ public:
       EBC.Origins.insert(std::pair<Inst *, Value *>(Cand.Mapping.LHS, NewVal));
 
       if (ReplaceCount >= FirstReplace && ReplaceCount <= LastReplace) {
-        BasicBlock::iterator BI = ReplacedInst;
+        BasicBlock::iterator BI(ReplacedInst);
         ReplaceInstWithValue(ReplacedInst->getParent()->getInstList(), BI,
                              NewVal);
         if (DynamicProfile)
           dynamicProfile(F, Cand);
-        changed = true;
+        Changed = true;
       } else {
         if (DebugSouperPass)
           errs() << "Skipping this replacement (number " << ReplaceCount <<
