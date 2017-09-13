@@ -50,7 +50,13 @@ static cl::opt<bool> PrintNZP("print-nzp", cl::init(false),
 #endif
 
 static cl::opt<bool> PrintNeg("print-neg", cl::init(false),
-    cl::desc("Print Neg bits (default=false)"));
+    cl::desc("Print Negative fact (default=false)"));
+
+static cl::opt<bool> PrintNonNeg("print-non-neg", cl::init(false),
+    cl::desc("Print Non Negative fact (default=false)"));
+
+static cl::opt<bool> PrintKnownBits("print-known-bits", cl::init(false),
+    cl::desc("Print known bits (default=false)"));
 
 static cl::opt<bool>
 Check("check", cl::desc("Check input for expected results"),

@@ -17,7 +17,7 @@
 import fileinput, sys, copy
 import collections
 
-widths, knownzeros, knownones, Negative = dict(), dict(), dict(), dict()
+widths, knownzeros, knownones, Negative, nonNegative = dict(), dict(), dict(), dict(), dict()
 pcmap = collections.OrderedDict()
 argmap = dict()
 cand = None
@@ -229,83 +229,139 @@ def propagateArgNames(insts):
             widths[newreg] = width
             widthValue = width.strip("i")
             if len(ops):
-                #Jubi
-                #assert len(ops) == 1, "one mask expected, got %d" % len(ops)
-#                assert len(ops) <= 3, "atmost three dataflow facts expected, got %d" % len(ops)
-#                if len(ops) == 1:
-#                    if "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
-#                        parseKnownBits(ops[0],newreg)
-#                    elif "negative" in ops[0]:
-#                        parseNegative(ops[0], newreg, int(widthValue))
-#                elif len(ops) == 2:
-#                    if "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
-#                        parseKnownBits(ops[0],newreg)
-#                    elif "negative" in ops[0]:
-#                        parseNegative(ops[0], newreg, int(widthValue))
-#                    elif "0" in ops[1] or "1" in ops[1] or "x" in ops[1]:
-#                        parseKnownBits(ops[1], newreg)
-#                    elif "negative" in ops[1]:
-#                        parseNegative(ops[1], newreg, int(widthValue))
-#                elif len(ops) == 3:
-#                    if "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
-#                        parseKnownBits(ops[0],newreg)
-#                    elif "negative" in ops[0]:
-#                        parseNegative(ops[0], newreg, int(widthValue))
-#                    elif "0" in ops[1] or "1" in ops[1] or "x" in ops[1]:
-#                        parseKnownBits(ops[1], newreg)
-#                    elif "negative" in ops[1]:
-#                        parseNegative(ops[1], newreg, int(widthValue))
-#                    elif "0" in ops[2] or "1" in ops[2] or "x" in ops[2]:
-#                        parseKnownBits(ops[2], newreg)
                 assert len(ops) <= 6, "atmost six dataflow facts expected, got %d" % len(ops)
                 if len(ops) == 1:
                     if "negative" in ops[0]:
                         parseNegative(ops[0], newreg, int(widthValue))
+                    elif "nonNegative" in ops[0]:
+                        parseNonNegative(ops[0], newreg, int(widthValue))
+                    elif "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
+                        parseKnownBits(ops[0], newreg)
                 elif len(ops) == 2:
                     if "negative" in ops[0]:
                         parseNegative(ops[0], newreg, int(widthValue))
+                    elif "nonNegative" in ops[0]:
+                        parseNonNegative(ops[0], newreg, int(widthValue))
+                    elif "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
+                         parseKnownBits(ops[0], newreg)
                     elif "negative" in ops[1]:
                         parseNegative(ops[1], newreg, int(widthValue))
+                    elif "nonNegative" in ops[1]:
+                        parseNonNegative(ops[1], newreg, int(widthValue))
+                    elif "0" in ops[1] or "1" in ops[1] or "x" in ops[1]:
+                        parseKnownBits(ops[1], newreg)
                 elif len(ops) == 3:
                     if "negative" in ops[0]:
                         parseNegative(ops[0], newreg, int(widthValue))
+                    elif "nonNegative" in ops[0]:
+                        parseNonNegative(ops[0], newreg, int(widthValue))
+                    elif "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
+                        parseKnownBits(ops[0], newreg)
                     elif "negative" in ops[1]:
                         parseNegative(ops[1], newreg, int(widthValue))
+                    elif "nonNegative" in ops[1]:
+                        parseNonNegative(ops[1], newreg, int(widthValue))
+                    elif "0" in ops[1] or "1" in ops[1] or "x" in ops[1]:
+                        parseKnownBits(ops[1], newreg)
                     elif "negative" in ops[2]:
                         parseNegative(ops[2], newreg, int(widthValue))
+                    elif "nonNegative" in ops[2]:
+                        parseNonNegative(ops[2], newreg, int(widthValue))
+                    elif "0" in ops[2] or "1" in ops[2] or "x" in ops[2]:
+                        parseKnownBits(ops[2], newreg)
                 elif len(ops) == 4:
                     if "negative" in ops[0]:
                         parseNegative(ops[0], newreg, int(widthValue))
+                    elif "nonNegative" in ops[0]:
+                        parseNonNegative(ops[0], newreg, int(widthValue))
+                    elif "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
+                        parseKnownBits(ops[0], newreg)
                     elif "negative" in ops[1]:
                         parseNegative(ops[1], newreg, int(widthValue))
+                    elif "nonNegative" in ops[1]:
+                        parseNonNegative(ops[1], newreg, int(widthValue))
+                    elif "0" in ops[1] or "1" in ops[1] or "x" in ops[1]:
+                        parseKnownBits(ops[1], newreg)
                     elif "negative" in ops[2]:
                         parseNegative(ops[2], newreg, int(widthValue))
+                    elif "nonNegative" in ops[2]:
+                        parseNonNegative(ops[2], newreg, int(widthValue))
+                    elif "0" in ops[2] or "1" in ops[2] or "x" in ops[2]:
+                        parseKnownBits(ops[2], newreg)
                     elif "negative" in ops[3]:
                         parseNegative(ops[3], newreg, int(widthValue))
+                    elif "nonNegative" in ops[3]:
+                        parseNonNegative(ops[3], newreg, int(widthValue))
+                    elif "0" in ops[3] or "1" in ops[3] or "x" in ops[3]:
+                        parseKnownBits(ops[3], newreg)
                 elif len(ops) == 5:
                     if "negative" in ops[0]:
                         parseNegative(ops[0], newreg, int(widthValue))
+                    elif "nonNegative" in ops[0]:
+                        parseNonNegative(ops[0], newreg, int(widthValue))
+                    elif "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
+                        parseKnownBits(ops[0], newreg)
                     elif "negative" in ops[1]:
                         parseNegative(ops[1], newreg, int(widthValue))
+                    elif "nonNegative" in ops[1]:
+                        parseNonNegative(ops[1], newreg, int(widthValue))
+                    elif "0" in ops[1] or "1" in ops[1] or "x" in ops[1]:
+                        parseKnownBits(ops[1], newreg)
                     elif "negative" in ops[2]:
                         parseNegative(ops[2], newreg, int(widthValue))
+                    elif "nonNegative" in ops[2]:
+                        parseNonNegative(ops[2], newreg, int(widthValue))
+                    elif "0" in ops[2] or "1" in ops[2] or "x" in ops[2]:
+                        parseKnownBits(ops[2], newreg)
                     elif "negative" in ops[3]:
                         parseNegative(ops[3], newreg, int(widthValue))
+                    elif "nonNegative" in ops[3]:
+                        parseNonNegative(ops[3], newreg, int(widthValue))
+                    elif "0" in ops[3] or "1" in ops[3] or "x" in ops[3]:
+                        parseKnownBits(ops[3], newreg)
                     elif "negative" in ops[4]:
                         parseNegative(ops[4], newreg, int(widthValue))
+                    elif "nonNegative" in ops[4]:
+                        parseNonNegative(ops[4], newreg, int(widthValue))
+                    elif "0" in ops[4] or "1" in ops[4] or "x" in ops[4]:
+                        parseKnownBits(ops[4], newreg)
                 elif len(ops) == 6:
                     if "negative" in ops[0]:
                         parseNegative(ops[0], newreg, int(widthValue))
+                    elif "nonNegative" in ops[0]:
+                        parseNonNegative(ops[0], newreg, int(widthValue))
+                    elif "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
+                        parseKnownBits(ops[0], newreg)
                     elif "negative" in ops[1]:
                         parseNegative(ops[1], newreg, int(widthValue))
+                    elif "nonNegative" in ops[1]:
+                        parseNonNegative(ops[1], newreg, int(widthValue))
+                    elif "0" in ops[1] or "1" in ops[1] or "x" in ops[1]:
+                        parseKnownBits(ops[1], newreg)
                     elif "negative" in ops[2]:
                         parseNegative(ops[2], newreg, int(widthValue))
+                    elif "nonNegative" in ops[2]:
+                        parseNonNegative(ops[2], newreg, int(widthValue))
+                    elif "0" in ops[2] or "1" in ops[2] or "x" in ops[2]:
+                        parseKnownBits(ops[2], newreg)
                     elif "negative" in ops[3]:
                         parseNegative(ops[3], newreg, int(widthValue))
+                    elif "nonNegative" in ops[3]:
+                        parseNonNegative(ops[3], newreg, int(widthValue))
+                    elif "0" in ops[3] or "1" in ops[3] or "x" in ops[3]:
+                        parseKnownBits(ops[3], newreg)
                     elif "negative" in ops[4]:
                         parseNegative(ops[4], newreg, int(widthValue))
+                    elif "nonNegative" in ops[4]:
+                        parseNonNegative(ops[4], newreg, int(widthValue))
+                    elif "0" in ops[4] or "1" in ops[4] or "x" in ops[4]:
+                        parseKnownBits(ops[4], newreg)
                     elif "negative" in ops[5]:
                         parseNegative(ops[5], newreg, int(widthValue))
+                    elif "nonNegative" in ops[5]:
+                        parseNonNegative(ops[5], newreg, int(widthValue))
+                    elif "0" in ops[5] or "1" in ops[5] or "x" in ops[5]:
+                        parseKnownBits(ops[5], newreg)
             counter += 1
             continue
         for k, op in enumerate(ops):
@@ -472,9 +528,8 @@ def rewriteOps(inst, newregs, ops):
            ops[j][0] = newregs[op[0]]
 
 def parseKnownBits(s,reg):
-    assert "(" in s and ")" in s
-    #s = s.strip("(").strip(")").strip("knownBits=")
-    s = s.strip("(").strip(")")
+    assert "(" in s and ")" in s and "knownBits=" in s
+    s = s.strip("(").strip(")").strip("knownBits=")
     zeromask = 0
     onemask = 0
     all = 0
@@ -516,6 +571,23 @@ def parseNegative(s,reg, width):
             print ";   no negative mask needed"
         print
 
+def parseNonNegative(s,reg, width):
+    assert "(" in s and ")" in s
+    s = s.strip("(").strip(")")
+    NonNegativeMask = 0
+    bit = 0
+    if s == "nonNegative":
+        while (bit < width-1):
+            NonNegativeMask += 1<<bit
+            bit += 1
+        print "; for " + str(bit) + " bit value " + s
+        if NonNegativeMask != 0:
+            NonNegative[reg] = NonNegativeMask
+            print ";   val = val & " + str(NonNegativeMask)
+        else:
+            print ";   no nonNegative mask needed"
+        print
+
 def printFuncHeader():
     regtmps = {}
     for i, reg in enumerate(argmap.values()):
@@ -547,12 +619,21 @@ def printFuncHeader():
             regtmps[reg] = name
             masks = "  " + old + " = and " + w + " " + name + ", " + str(Negative[reg]) + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_negative\n" + masks
+        if reg in nonNegative:
+            regnum = reg[1:]
+            w = widths[reg]
+            old = regtmps[reg]
+            name = "%t3_" + regnum
+            regtmps[reg] = name
+            masks = "  " + old + " = and " + w + " " + name + ", " + str(nonNegative[reg]) + "\n" +\
+            "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_nonNegative\n" + masks
     # global declarations: dummy store, intrinsics
     print "target datalayout = \"e-m:e-i64:64-f80:128-n8:16:32:64-S128\"\n"
     for i, reg in enumerate(argmap.values()):
         print "@glob_" + reg[1:] + "_and = external global " + widths[reg]
         print "@glob_" + reg[1:] + "_or = external global " + widths[reg]
         print "@glob_" + reg[1:] + "_negative = external global " + widths[reg]
+        print "@glob_" + reg[1:] + "_nonNegative = external global " + widths[reg]
     for decl in intrdecl.values():
         print decl
     print "\ndefine " + cand[1] + " @foo(",

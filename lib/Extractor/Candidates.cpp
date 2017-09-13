@@ -50,6 +50,14 @@ static llvm::cl::opt<bool> HarvestDemandedBits(
     "souper-harvest-demanded-bits",
     llvm::cl::desc("Perform demanded bits analysis (default=false)"),
     llvm::cl::init(false));
+static llvm::cl::opt<bool> PrintNegAtReturn(
+    "print-neg-at-return",
+    llvm::cl::desc("Print negative dfa in each value returned from a function (default=false)"),
+    llvm::cl::init(false));
+static llvm::cl::opt<bool> PrintNonNegAtReturn(
+    "print-nonneg-at-return",
+    llvm::cl::desc("Print negative dfa in each value returned from a function (default=false)"),
+    llvm::cl::init(false));
 static llvm::cl::opt<bool> PrintKnownAtReturn(
     "print-known-at-return",
     llvm::cl::desc("Print known bits in each value returned from a function (default=false)"),
@@ -730,7 +738,7 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
   for (auto &BB : F) {
     std::unique_ptr<BlockCandidateSet> BCS(new BlockCandidateSet);
     for (auto &I : BB) {
-      if (PrintKnownAtReturn && isa<ReturnInst>(I)) {
+      if (PrintNegAtReturn && isa<ReturnInst>(I)) {
         auto V = I.getOperand(0);
         auto DL = F.getParent()->getDataLayout();
         bool Negative = 0;
@@ -739,6 +747,24 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
           llvm::outs() << "known at return: " << "(negative)" << "\n";
         else
           llvm::outs() << "known at return: " << "" << "\n";
+      }
+      if (PrintNonNegAtReturn && isa<ReturnInst>(I)) {
+        auto V = I.getOperand(0);
+        auto DL = F.getParent()->getDataLayout();
+        bool NonNegative = 0;
+        NonNegative = isKnownNonNegative(V, DL);
+        if (NonNegative)
+          llvm::outs() << "known at return: " << "(nonNegative)" << "\n";
+        else
+          llvm::outs() << "known at return: " << "" << "\n";
+      }
+      if (PrintKnownAtReturn && isa<ReturnInst>(I)) {
+        auto V = I.getOperand(0);
+        auto DL = F.getParent()->getDataLayout();
+        unsigned Width = DL.getTypeSizeInBits(V->getType());
+        KnownBits Known(Width);
+        computeKnownBits(V, Known, DL);
+        llvm::outs() << "known at return: " << Inst::getKnownBitsString(Known.Zero, Known.One) << "\n";
       }
       if (I.getType()->isIntegerTy())
         BCS->Replacements.emplace_back(&I, InstMapping(EB.get(&I), 0));
