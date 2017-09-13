@@ -73,38 +73,6 @@ public:
   BaseSolver(std::unique_ptr<SMTLIBSolver> SMTSolver, unsigned Timeout)
       : SMTSolver(std::move(SMTSolver)), Timeout(Timeout) {}
 
-#if 0
-  bool testNonNegative(const BlockPCs &BPCs,
-                const std::vector<InstMapping> &PCs,
-                APInt &NonNegative, Inst *LHS,
-                InstContext &IC) {
-    unsigned W = LHS->Width;
-    APInt Zero = APInt::getNullValue(W);
-    Inst *Mask = IC.getConst(NonNegative);
-    InstMapping Mapping(IC.getInst(Inst::And, W, { LHS, Mask }), IC.getConst(Zero));
-    bool IsSat;
-    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
-                                                  IsSat, 0, 0, Timeout);
-    if (EC)
-      llvm::report_fatal_error("stopping due to error");
-    return !IsSat;
-  }
-
-  std::error_code nonNegative(const BlockPCs &BPCs,
-                              const std::vector<InstMapping> &PCs,
-                              Inst *LHS, APInt &NonNegative,
-                              InstContext &IC) override {
-    unsigned W = LHS->Width;
-    NonNegative = APInt::getNullValue(W);
-    APInt NonNegativeGuess = NonNegative | APInt::getOneBitSet(W, W-1);
-    if (testNonNegative(BPCs, PCs, NonNegativeGuess, LHS, IC))
-      NonNegative = APInt::getNullValue(W);
-    else
-      NonNegative = NonNegativeGuess;
-    return std::error_code();
-  }
-#endif
-
   bool testZeroSign(const BlockPCs &BPCs,
                 const std::vector<InstMapping> &PCs,
                 APInt &Negative, Inst *LHS,
@@ -147,6 +115,58 @@ public:
       Negative = APInt::getNullValue(W);
     else if (testOneSign(BPCs, PCs, NegativeGuess, LHS, IC))
       Negative = NegativeGuess;
+    return std::error_code();
+  }
+
+  std::error_code nonNegative(const BlockPCs &BPCs,
+                              const std::vector<InstMapping> &PCs,
+                              Inst *LHS, APInt &NonNegative,
+                              InstContext &IC) override {
+    unsigned W = LHS->Width;
+    NonNegative = APInt::getNullValue(W);
+    APInt NonNegativeGuess = NonNegative | APInt::getOneBitSet(W, W-1);
+    if (testZeroSign(BPCs, PCs, NonNegativeGuess, LHS, IC))
+      NonNegative = APInt::getNullValue(W);
+    else if (testOneSign(BPCs, PCs, NonNegativeGuess, LHS, IC))
+      NonNegative = NonNegativeGuess;
+    else
+      NonNegative = NonNegativeGuess; //if sign-bit is not guessed as 0 or 1, set non-negative signbit to 1, so that nothing is inferred by souper at the end
+    return std::error_code();
+  }
+
+
+  bool testKnown(const BlockPCs &BPCs,
+                const std::vector<InstMapping> &PCs,
+                APInt &Zeros, APInt &Ones, Inst *LHS,
+                InstContext &IC) {
+    unsigned W = LHS->Width;
+    Inst *Mask = IC.getConst(Zeros | Ones);
+    InstMapping Mapping(IC.getInst(Inst::And, W, { LHS, Mask }), IC.getConst(Ones));
+    bool IsSat;
+    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
+                                                  IsSat, 0, 0, Timeout);
+    if (EC)
+      llvm::report_fatal_error("stopping due to error");
+    return !IsSat;
+  }
+
+  std::error_code knownBits(const BlockPCs &BPCs,
+                          const std::vector<InstMapping> &PCs,
+                          Inst *LHS, APInt &Zeros, APInt &Ones,
+                          InstContext &IC) override {
+    unsigned W = LHS->Width;
+    Ones = APInt::getNullValue(W);
+    Zeros = APInt::getNullValue(W);
+    for (unsigned I=0; I<W; I++) {
+      APInt ZeroGuess = Zeros | APInt::getOneBitSet(W, I);
+      if (testKnown(BPCs, PCs, ZeroGuess, Ones, LHS, IC)) {
+        Zeros = ZeroGuess;
+        continue;
+      }
+      APInt OneGuess = Ones | APInt::getOneBitSet(W, I);
+      if (testKnown(BPCs, PCs, Zeros, OneGuess, LHS, IC))
+        Ones = OneGuess;
+    }
     return std::error_code();
   }
 
@@ -356,14 +376,13 @@ public:
     return UnderlyingSolver->getName() + " + internal cache";
   }
 
-#if 0
   std::error_code nonNegative(const BlockPCs &BPCs,
                               const std::vector<InstMapping> &PCs,
                               Inst *LHS, APInt &NonNegative,
                               InstContext &IC) override {
     return UnderlyingSolver->nonNegative(BPCs, PCs, LHS, NonNegative, IC);
   }
-#endif
+
   std::error_code Negative(const BlockPCs &BPCs,
                               const std::vector<InstMapping> &PCs,
                               Inst *LHS, APInt &Negative,
@@ -371,6 +390,12 @@ public:
     return UnderlyingSolver->Negative(BPCs, PCs, LHS, Negative, IC);
   }
 
+  std::error_code knownBits(const BlockPCs &BPCs,
+                            const std::vector<InstMapping> &PCs,
+                            Inst *LHS, APInt &Zeros, APInt &Ones,
+                            InstContext &IC) override {
+    return UnderlyingSolver->knownBits(BPCs, PCs, LHS, Zeros, Ones, IC);
+  }
 
 };
 
@@ -434,14 +459,13 @@ public:
     return UnderlyingSolver->getName() + " + external cache";
   }
 
-#if 0
   std::error_code nonNegative(const BlockPCs &BPCs,
                             const std::vector<InstMapping> &PCs,
                             Inst *LHS, APInt &NonNegative,
                             InstContext &IC) override {
     return UnderlyingSolver->nonNegative(BPCs, PCs, LHS, NonNegative, IC);
   }
-  #endif
+
   std::error_code Negative(const BlockPCs &BPCs,
                             const std::vector<InstMapping> &PCs,
                             Inst *LHS, APInt &Negative,
@@ -449,6 +473,12 @@ public:
     return UnderlyingSolver->Negative(BPCs, PCs, LHS, Negative, IC);
   }
 
+  std::error_code knownBits(const BlockPCs &BPCs,
+                            const std::vector<InstMapping> &PCs,
+                            Inst *LHS, APInt &Zeros, APInt &Ones,
+                            InstContext &IC) override {
+    return UnderlyingSolver->knownBits(BPCs, PCs, LHS, Zeros, Ones, IC);
+  }
 
 };
 

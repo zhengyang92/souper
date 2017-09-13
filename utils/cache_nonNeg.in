@@ -66,7 +66,7 @@ sub souper_known ($) {
     (my $fh, my $tmpfn) = File::Temp::tempfile();
     print $fh $opt;
     $fh->flush();
-    my $arg = "-infer-neg -souper-exploit-ub=false -infer-rhs -solver-timeout=30";    
+    my $arg = "-infer-non-neg -souper-exploit-ub=false -infer-rhs -solver-timeout=30";    
     my $cmd = "${check} $solver $arg < $tmpfn 2>/dev/null |";
     # print "<${cmd}>\n";
     open INF, $cmd;
@@ -209,7 +209,7 @@ sub llvm_known($) {
     (my $fh1, my $fn1) = File::Temp::tempfile();
     print $fh1 $opt;
     close $fh1;
-    open INF, "$triager < $fn1 | $llvmas | $souper -print-neg-at-return |" or die;
+    open INF, "$triager < $fn1 | $llvmas | $souper -print-nonneg-at-return |" or die;
     my $known;
     while (my $line = <INF>) {
 	chomp $line;
@@ -253,10 +253,10 @@ sub go($) {
 	$print = 1;
 	my $llvm_stronger = 0;
 	my $souper_stronger = 0;
-        if ($sk eq "(negative)") {
+        if ($sk eq "(nonNegative)") {
             $souper_stronger = 1;
         }
-        if ($lk eq "(negative)") {
+        if ($lk eq "(nonNegative)") {
             $llvm_stronger = 1;
         }
 	if ($llvm_stronger && $souper_stronger) {

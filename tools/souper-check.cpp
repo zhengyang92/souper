@@ -26,14 +26,20 @@ InputFilename(cl::Positional, cl::desc("<input souper optimization>"),
 static cl::opt<bool> PrintCounterExample("print-counterexample",
     cl::desc("Print counterexample (default=true)"),
     cl::init(true));
-#if 0
-static cl::opt<bool> NZP("infer-nzp",
-    cl::desc("Compute NZP for the candidate (default=false)"),
+
+static cl::opt<bool> InferNeg("infer-neg",
+    cl::desc("Compute Negative for the candidate (default=false)"),
     cl::init(false));
-#endif
-static cl::opt<bool> Neg("infer-neg",
-    cl::desc("Compute Neg for the candidate (default=false)"),
+
+static cl::opt<bool> InferKnownBits("infer-known-bits",
+    cl::desc("Compute known bits for the candidate (default=false)"),
     cl::init(false));
+
+static cl::opt<bool> InferNonNeg("infer-non-neg",
+    cl::desc("Compute non-negative for the candidate (default=false)"),
+    cl::init(false));
+
+
 
 static cl::opt<bool> PrintRepl("print-replacement",
     cl::desc("Print the replacement, if valid (default=false)"),
@@ -76,23 +82,8 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
     llvm::outs() << "; parsing successful\n";
     return 0;
   }
-#if 0
-  if (NZP) {
-    APInt NonNegative;
-    if (std::error_code EC = S->nonNegative(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
-                                            NonNegative, IC)) {
-      llvm::errs() << EC.message() << '\n';
-    }
-    std::string s;
-    if (NonNegative == APInt::getNullValue(Rep.Mapping.LHS->Width))
-      s = Inst::getMoreKnownBitsString(0, 1, 0);
-    else
-      s = Inst::getMoreKnownBitsString(0, 0, 0);
-    llvm::outs() << "known from souper: " << s << "\n";
-    return 0;
-  }
-#endif
-  if (Neg) {
+
+  if (InferNeg) {
     APInt Negative;
     if (std::error_code EC = S->Negative(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
                                             Negative, IC)) {
@@ -103,6 +94,32 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
       s = "";
     else
       s = "(negative)";
+    llvm::outs() << "known from souper: " << s << "\n";
+    return 0;
+  }
+
+  if (InferNonNeg) {
+    APInt NonNegative;
+    if (std::error_code EC = S->nonNegative(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                            NonNegative, IC)) {
+      llvm::errs() << EC.message() << '\n';
+    }
+    std::string s;
+    if (NonNegative == APInt::getNullValue(Rep.Mapping.LHS->Width))
+      s = "(nonNegative)";
+    else
+      s = "";
+    llvm::outs() << "known from souper: " << s << "\n";
+    return 0;
+  }
+
+  if (InferKnownBits) {
+    APInt Zeros, Ones;
+    if (std::error_code EC = S->knownBits(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                          Zeros, Ones, IC)) {
+      llvm::errs() << EC.message() << '\n';
+    }
+    std::string s = Inst::getKnownBitsString(Zeros, Ones);
     llvm::outs() << "known from souper: " << s << "\n";
     return 0;
   }
