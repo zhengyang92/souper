@@ -42,10 +42,12 @@ public:
                            const std::vector<InstMapping> &PCs,
                            Inst *LHS, llvm::APInt &Negative,
                            InstContext &IC) = 0;
+  virtual
   std::error_code knownBits(const BlockPCs &BPCs,
                             const std::vector<InstMapping> &PCs,
                             Inst *LHS, llvm::APInt &Zeros, llvm::APInt &Ones,
                             InstContext &IC) = 0;
+  virtual
   std::error_code nonNegative(const BlockPCs &BPCs,
                             const std::vector<InstMapping> &PCs,
                             Inst *LHS, llvm::APInt &NonNegative,
