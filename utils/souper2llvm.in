@@ -558,15 +558,12 @@ def parseNegative(s,reg, width):
     assert "(" in s and ")" in s
     s = s.strip("(").strip(")")
     NegativeMask = 0
-    bit = 0
     if s == "negative":
-        while (bit < width-1):
-            NegativeMask += 1<<bit
-            bit += 1
-        print "; for " + str(bit) + " bit value " + s
+        NegativeMask = 1<<(width-1)
+        print "; for " + str(width) + " bit value " + s
         if NegativeMask != 0:
             Negative[reg] = NegativeMask
-            print ";   val = val & " + str(NegativeMask)
+            print ";   val = val | " + str(NegativeMask)
         else:
             print ";   no negative mask needed"
         print
@@ -580,9 +577,9 @@ def parseNonNegative(s,reg, width):
         while (bit < width-1):
             NonNegativeMask += 1<<bit
             bit += 1
-        print "; for " + str(bit) + " bit value " + s
+        print "; for " + str(width) + " bit value " + s
         if NonNegativeMask != 0:
-            NonNegative[reg] = NonNegativeMask
+            nonNegative[reg] = NonNegativeMask
             print ";   val = val & " + str(NonNegativeMask)
         else:
             print ";   no nonNegative mask needed"
@@ -617,7 +614,7 @@ def printFuncHeader():
             old = regtmps[reg]
             name = "%t3_" + regnum
             regtmps[reg] = name
-            masks = "  " + old + " = and " + w + " " + name + ", " + str(Negative[reg]) + "\n" +\
+            masks = "  " + old + " = or " + w + " " + name + ", " + str(Negative[reg]) + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_negative\n" + masks
         if reg in nonNegative:
             regnum = reg[1:]
