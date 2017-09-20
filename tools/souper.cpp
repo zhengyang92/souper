@@ -44,10 +44,6 @@ OutputFilename("o", cl::desc("Override output filename"),
 
 static cl::opt<bool> StaticProfile("souper-static-profile", cl::init(false),
     cl::desc("Static profiling of Souper optimizations (default=false)"));
-#if 0
-static cl::opt<bool> PrintNZP("print-nzp", cl::init(false),
-    cl::desc("Print NZP bits (default=false)"));
-#endif
 
 static cl::opt<bool> PrintNeg("print-neg", cl::init(false),
     cl::desc("Print Negative fact (default=false)"));
@@ -57,6 +53,9 @@ static cl::opt<bool> PrintNonNeg("print-non-neg", cl::init(false),
 
 static cl::opt<bool> PrintKnownBits("print-known-bits", cl::init(false),
     cl::desc("Print known bits (default=false)"));
+
+static cl::opt<bool> PrintPowerTwo("print-power-two", cl::init(false),
+    cl::desc("Print Non power of two fact (default=false)"));
 
 static cl::opt<bool>
 Check("check", cl::desc("Check input for expected results"),

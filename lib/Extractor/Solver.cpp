@@ -136,7 +136,6 @@ public:
     return std::error_code();
   }
 
-
   bool testKnown(const BlockPCs &BPCs,
                 const std::vector<InstMapping> &PCs,
                 APInt &Zeros, APInt &Ones, Inst *LHS,
@@ -169,6 +168,44 @@ public:
       APInt OneGuess = Ones | APInt::getOneBitSet(W, I);
       if (testKnown(BPCs, PCs, Zeros, OneGuess, LHS, IC))
         Ones = OneGuess;
+    }
+    return std::error_code();
+  }
+
+  bool testPowerTwo(const BlockPCs &BPCs,
+                const std::vector<InstMapping> &PCs,
+                APInt &PowerTwoGuess, Inst *LHS,
+                InstContext &IC) {
+    unsigned W = LHS->Width;
+    Inst *Guess = IC.getConst(PowerTwoGuess);
+    InstMapping Mapping(LHS, Guess);
+    bool IsSat;
+    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
+    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
+                                                  IsSat, 0, 0, Timeout);
+    if (EC)
+      llvm::report_fatal_error("stopping due to error");
+    return !IsSat;
+  }
+
+  std::error_code powerTwo(const BlockPCs &BPCs,
+                              const std::vector<InstMapping> &PCs,
+                              Inst *LHS, APInt &PowTwo,
+                              InstContext &IC) override {
+    unsigned W = LHS->Width;
+    APInt ConstOne(W, 1, false);
+    for (unsigned ShiftAmt = 0; ShiftAmt < W; ++ShiftAmt) {
+      APInt PowTwoGuess = ConstOne.shl(ShiftAmt);
+      llvm::outs() << "shift amount = " << ShiftAmt << "\n";
+      llvm::outs() << "1<<shiftamt = " << PowTwoGuess.getLimitedValue() << "\n";
+      if (testPowerTwo(BPCs, PCs, PowTwoGuess, LHS, IC)) {
+        llvm::outs() << "**** Yes *** \n";
+        PowTwo = APInt(1, 1, false);
+        break;
+      } else {
+        llvm::outs() << "**** No *** \n";
+        PowTwo = APInt(1, 0, false);
+      }
     }
     return std::error_code();
   }
@@ -400,6 +437,13 @@ public:
     return UnderlyingSolver->knownBits(BPCs, PCs, LHS, Zeros, Ones, IC);
   }
 
+  std::error_code powerTwo(const BlockPCs &BPCs,
+                            const std::vector<InstMapping> &PCs,
+                            Inst *LHS, APInt &PowerTwo,
+                            InstContext &IC) override {
+    return UnderlyingSolver->powerTwo(BPCs, PCs, LHS, PowerTwo, IC);
+  }
+
 };
 
 class ExternalCachingSolver : public Solver {
@@ -481,6 +525,13 @@ public:
                             Inst *LHS, APInt &Zeros, APInt &Ones,
                             InstContext &IC) override {
     return UnderlyingSolver->knownBits(BPCs, PCs, LHS, Zeros, Ones, IC);
+  }
+
+  std::error_code powerTwo(const BlockPCs &BPCs,
+                            const std::vector<InstMapping> &PCs,
+                            Inst *LHS, APInt &PowerTwo,
+                            InstContext &IC) override {
+    return UnderlyingSolver->powerTwo(BPCs, PCs, LHS, PowerTwo, IC);
   }
 
 };
