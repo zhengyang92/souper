@@ -62,6 +62,10 @@ static llvm::cl::opt<bool> PrintKnownAtReturn(
     "print-known-at-return",
     llvm::cl::desc("Print known bits in each value returned from a function (default=false)"),
     llvm::cl::init(false));
+static llvm::cl::opt<bool> PrintPowerTwoAtReturn(
+    "print-power-two-at-return",
+    llvm::cl::desc("Print power two dfa in each value returned from a function (default=false)"),
+    llvm::cl::init(false));
 
 using namespace llvm;
 using namespace klee;
@@ -765,6 +769,16 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
         KnownBits Known(Width);
         computeKnownBits(V, Known, DL);
         llvm::outs() << "known at return: " << Inst::getKnownBitsString(Known.Zero, Known.One) << "\n";
+      }
+      if (PrintPowerTwoAtReturn && isa<ReturnInst>(I)) {
+        auto V = I.getOperand(0);
+        auto DL = F.getParent()->getDataLayout();
+        bool PowerTwo = 0;
+        PowerTwo = isKnownToBeAPowerOfTwo(V, DL);
+        if (PowerTwo)
+          llvm::outs() << "known at return: " << "(powerOfTwo)" << "\n";
+        else
+          llvm::outs() << "known at return: " << "" << "\n";
       }
       if (I.getType()->isIntegerTy())
         BCS->Replacements.emplace_back(&I, InstMapping(EB.get(&I), 0));

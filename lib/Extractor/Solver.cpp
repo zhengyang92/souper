@@ -172,41 +172,32 @@ public:
     return std::error_code();
   }
 
-  bool testPowerTwo(const BlockPCs &BPCs,
-                const std::vector<InstMapping> &PCs,
-                APInt &PowerTwoGuess, Inst *LHS,
-                InstContext &IC) {
-    unsigned W = LHS->Width;
-    Inst *Guess = IC.getConst(PowerTwoGuess);
-    InstMapping Mapping(LHS, Guess);
-    bool IsSat;
-    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
-    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
-                                                  IsSat, 0, 0, Timeout);
-    if (EC)
-      llvm::report_fatal_error("stopping due to error");
-    return !IsSat;
-  }
-
   std::error_code powerTwo(const BlockPCs &BPCs,
                               const std::vector<InstMapping> &PCs,
                               Inst *LHS, APInt &PowTwo,
                               InstContext &IC) override {
     unsigned W = LHS->Width;
     APInt ConstOne(W, 1, false);
-    for (unsigned ShiftAmt = 0; ShiftAmt < W; ++ShiftAmt) {
-      APInt PowTwoGuess = ConstOne.shl(ShiftAmt);
-      llvm::outs() << "shift amount = " << ShiftAmt << "\n";
-      llvm::outs() << "1<<shiftamt = " << PowTwoGuess.getLimitedValue() << "\n";
-      if (testPowerTwo(BPCs, PCs, PowTwoGuess, LHS, IC)) {
-        llvm::outs() << "**** Yes *** \n";
-        PowTwo = APInt(1, 1, false);
-        break;
-      } else {
-        llvm::outs() << "**** No *** \n";
-        PowTwo = APInt(1, 0, false);
-      }
+    Inst *PowerGuess = IC.getConst(APInt(1, 0, false));
+    for (unsigned ShiftAmt = 0; ShiftAmt < W-1; ++ShiftAmt) {
+      APInt SAmt(W, ShiftAmt, false);
+      PowerGuess = IC.getInst(Inst::Or, 1, {PowerGuess, IC.getInst(Inst::Eq, W, {LHS, 
+                                                                                 IC.getInst(Inst::Shl, W,
+                                                                                            {IC.getConst(ConstOne), IC.getConst(SAmt)})})});
     }
+    APInt TrueGuess(1, 1, false);
+    InstMapping Mapping(PowerGuess, IC.getConst(TrueGuess));
+    bool IsSat;
+    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
+    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
+                                                  IsSat, 0, 0, Timeout);
+    if (EC)
+      llvm::report_fatal_error("stopping due to error");
+
+    if (!IsSat)
+      PowTwo = APInt(1, 1, false);
+    else
+      PowTwo = APInt(1, 0, false);
     return std::error_code();
   }
 
