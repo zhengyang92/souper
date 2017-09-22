@@ -178,15 +178,10 @@ public:
                               InstContext &IC) override {
     unsigned W = LHS->Width;
     APInt ConstOne(W, 1, false);
-    Inst *PowerGuess = IC.getConst(APInt(1, 0, false));
-    for (unsigned ShiftAmt = 0; ShiftAmt < W-1; ++ShiftAmt) {
-      APInt SAmt(W, ShiftAmt, false);
-      PowerGuess = IC.getInst(Inst::Or, 1, {PowerGuess, IC.getInst(Inst::Eq, W, {LHS, 
-                                                                                 IC.getInst(Inst::Shl, W,
-                                                                                            {IC.getConst(ConstOne), IC.getConst(SAmt)})})});
-    }
-    APInt TrueGuess(1, 1, false);
-    InstMapping Mapping(PowerGuess, IC.getConst(TrueGuess));
+    APInt ZeroGuess(W, 0, false);
+    Inst *PowerMask = IC.getInst(Inst::And, W, {LHS, IC.getInst(Inst::Sub, W, {LHS, IC.getConst(ConstOne)})});
+    Inst *Zero = IC.getConst(ZeroGuess);
+    InstMapping Mapping(PowerMask, Zero);
     bool IsSat;
     Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
     std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
