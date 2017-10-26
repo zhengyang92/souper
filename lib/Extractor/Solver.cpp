@@ -179,7 +179,7 @@ public:
     unsigned W = LHS->Width;
     APInt ConstOne(W, 1, false);
     Inst *PowerGuess = IC.getConst(APInt(1, 0, false));
-    for (unsigned ShiftAmt = 0; ShiftAmt < W-1; ++ShiftAmt) {
+    for (unsigned ShiftAmt = 0; ShiftAmt < W; ++ShiftAmt) {
       APInt SAmt(W, ShiftAmt, false);
       PowerGuess = IC.getInst(Inst::Or, 1, {PowerGuess, IC.getInst(Inst::Eq, W, {LHS, 
                                                                                  IC.getInst(Inst::Shl, W,
