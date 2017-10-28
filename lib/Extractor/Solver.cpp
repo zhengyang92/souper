@@ -179,9 +179,14 @@ public:
     unsigned W = LHS->Width;
     APInt ConstOne(W, 1, false);
     APInt ZeroGuess(W, 0, false);
+    APInt TrueGuess(1, 1, false);
     Inst *PowerMask = IC.getInst(Inst::And, W, {LHS, IC.getInst(Inst::Sub, W, {LHS, IC.getConst(ConstOne)})});
     Inst *Zero = IC.getConst(ZeroGuess);
-    InstMapping Mapping(PowerMask, Zero);
+    Inst *True = IC.getConst(TrueGuess);
+    Inst *PowerTwoInst = IC.getInst(Inst::And, 1, {IC.getInst(Inst::Ne, 1, {LHS, Zero}),
+                                                   IC.getInst(Inst::Eq, 1, {PowerMask, Zero})});
+    InstMapping Mapping(PowerTwoInst, True);
+    //InstMapping Mapping(PowerMask, Zero);
     bool IsSat;
     Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
     std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
