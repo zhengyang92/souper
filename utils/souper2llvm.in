@@ -17,7 +17,7 @@
 import fileinput, sys, copy
 import collections
 
-widths, knownzeros, knownones, Negative, nonNegative, powerTwo = dict(), dict(), dict(), dict(), dict(), dict()
+widths, knownzeros, knownones, Negative, nonNegative, powerTwo, nonZero = dict(), dict(), dict(), dict(), dict(), dict(), dict()
 pcmap = collections.OrderedDict()
 argmap = dict()
 cand = None
@@ -30,6 +30,8 @@ cnt2 = 0
 cnt3 = 0
 independent = []
 flagPC = 0
+MDRangePtr = 0
+metadataStr = ""
 
 # souper IR -> LLVM inst map
 instmap = {
@@ -231,201 +233,17 @@ def propagateArgNames(insts):
             widthValue = width.strip("i")
             if len(ops):
                 assert len(ops) <= 6, "atmost six dataflow facts expected, got %d" % len(ops)
-                if len(ops) == 1:
-                    if "negative" in ops[0]:
-                        parseNegative(ops[0], newreg, int(widthValue))
-                    elif "nonNegative" in ops[0]:
-                        parseNonNegative(ops[0], newreg, int(widthValue))
-                    elif "knownBits" in ops[0]:
-                        if "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
-                            parseKnownBits(ops[0], newreg)
-                    elif "powerOfTwo" in ops[0]:
-                        parsePowerTwo(ops[0], newreg, int(widthValue))
-                elif len(ops) == 2:
-                    if "negative" in ops[0]:
-                        parseNegative(ops[0], newreg, int(widthValue))
-                    elif "nonNegative" in ops[0]:
-                        parseNonNegative(ops[0], newreg, int(widthValue))
-                    elif "knownBits" in ops[0]:
-                        if "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
-                            parseKnownBits(ops[0], newreg)
-                    elif "powerOfTwo" in ops[0]:
-                        parsePowerTwo(ops[0], newreg, int(widthValue))
-                    elif "negative" in ops[1]:
-                        parseNegative(ops[1], newreg, int(widthValue))
-                    elif "nonNegative" in ops[1]:
-                        parseNonNegative(ops[1], newreg, int(widthValue))
-                    elif "knownBits" in ops[1]:
-                        if "0" in ops[1] or "1" in ops[1] or "x" in ops[1]:
-                            parseKnownBits(ops[1], newreg)
-                    elif "powerOfTwo" in ops[1]:
-                        parsePowerTwo(ops[1], newreg, int(widthValue))
-                elif len(ops) == 3:
-                    if "negative" in ops[0]:
-                        parseNegative(ops[0], newreg, int(widthValue))
-                    elif "nonNegative" in ops[0]:
-                        parseNonNegative(ops[0], newreg, int(widthValue))
-                    elif "knownBits" in ops[0]:
-                        if "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
-                            parseKnownBits(ops[0], newreg)
-                    elif "powerOfTwo" in ops[0]:
-                        parsePowerTwo(ops[0], newreg, int(widthValue))
-                    elif "negative" in ops[1]:
-                        parseNegative(ops[1], newreg, int(widthValue))
-                    elif "nonNegative" in ops[1]:
-                        parseNonNegative(ops[1], newreg, int(widthValue))
-                    elif "knownBits" in ops[1]:
-                        if "0" in ops[1] or "1" in ops[1] or "x" in ops[1]:
-                            parseKnownBits(ops[1], newreg)
-                    elif "powerOfTwo" in ops[1]:
-                        parsePowerTwo(ops[1], newreg, int(widthValue))
-                    elif "negative" in ops[2]:
-                        parseNegative(ops[2], newreg, int(widthValue))
-                    elif "nonNegative" in ops[2]:
-                        parseNonNegative(ops[2], newreg, int(widthValue))
-                    elif "knownBits" in ops[2]:
-                        if "0" in ops[2] or "1" in ops[2] or "x" in ops[2]:
-                            parseKnownBits(ops[2], newreg)
-                    elif "powerOfTwo" in ops[2]:
-                        parsePowerTwo(ops[2], newreg, int(widthValue))
-                elif len(ops) == 4:
-                    if "negative" in ops[0]:
-                        parseNegative(ops[0], newreg, int(widthValue))
-                    elif "nonNegative" in ops[0]:
-                        parseNonNegative(ops[0], newreg, int(widthValue))
-                    elif "knownBits" in ops[0]:
-                        if "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
-                            parseKnownBits(ops[0], newreg)
-                    elif "powerOfTwo" in ops[0]:
-                        parsePowerTwo(ops[0], newreg, int(widthValue))
-                    elif "negative" in ops[1]:
-                        parseNegative(ops[1], newreg, int(widthValue))
-                    elif "nonNegative" in ops[1]:
-                        parseNonNegative(ops[1], newreg, int(widthValue))
-                    elif "knownBits" in ops[1]:
-                        if "0" in ops[1] or "1" in ops[1] or "x" in ops[1]:
-                            parseKnownBits(ops[1], newreg)
-                    elif "powerOfTwo" in ops[1]:
-                        parsePowerTwo(ops[1], newreg, int(widthValue))
-                    elif "negative" in ops[2]:
-                        parseNegative(ops[2], newreg, int(widthValue))
-                    elif "nonNegative" in ops[2]:
-                        parseNonNegative(ops[2], newreg, int(widthValue))
-                    elif "knownBits" in ops[2]:
-                        if "0" in ops[2] or "1" in ops[2] or "x" in ops[2]:
-                            parseKnownBits(ops[2], newreg)
-                    elif "powerOfTwo" in ops[2]:
-                        parsePowerTwo(ops[2], newreg, int(widthValue))
-                    elif "negative" in ops[3]:
-                        parseNegative(ops[3], newreg, int(widthValue))
-                    elif "nonNegative" in ops[3]:
-                        parseNonNegative(ops[3], newreg, int(widthValue))
-                    elif "knownBits" in ops[3]:
-                        if "0" in ops[3] or "1" in ops[3] or "x" in ops[3]:
-                            parseKnownBits(ops[3], newreg)
-                    elif "powerOfTwo" in ops[3]:
-                        parsePowerTwo(ops[3], newreg, int(widthValue))
-                elif len(ops) == 5:
-                    if "negative" in ops[0]:
-                        parseNegative(ops[0], newreg, int(widthValue))
-                    elif "nonNegative" in ops[0]:
-                        parseNonNegative(ops[0], newreg, int(widthValue))
-                    elif "knownBits" in ops[0]:
-                        if "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
-                            parseKnownBits(ops[0], newreg)
-                    elif "powerOfTwo" in ops[0]:
-                        parsePowerTwo(ops[0], newreg, int(widthValue))
-                    elif "negative" in ops[1]:
-                        parseNegative(ops[1], newreg, int(widthValue))
-                    elif "nonNegative" in ops[1]:
-                        parseNonNegative(ops[1], newreg, int(widthValue))
-                    elif "knownBits" in ops[1]:
-                        if "0" in ops[1] or "1" in ops[1] or "x" in ops[1]:
-                            parseKnownBits(ops[1], newreg)
-                    elif "powerOfTwo" in ops[1]:
-                        parsePowerTwo(ops[1], newreg, int(widthValue))
-                    elif "negative" in ops[2]:
-                        parseNegative(ops[2], newreg, int(widthValue))
-                    elif "nonNegative" in ops[2]:
-                        parseNonNegative(ops[2], newreg, int(widthValue))
-                    elif "knownBits" in ops[2]:
-                        if "0" in ops[2] or "1" in ops[2] or "x" in ops[2]:
-                            parseKnownBits(ops[2], newreg)
-                    elif "powerOfTwo" in ops[2]:
-                        parsePowerTwo(ops[2], newreg, int(widthValue))
-                    elif "negative" in ops[3]:
-                        parseNegative(ops[3], newreg, int(widthValue))
-                    elif "nonNegative" in ops[3]:
-                        parseNonNegative(ops[3], newreg, int(widthValue))
-                    elif "knownBits" in ops[3]:
-                        if "0" in ops[3] or "1" in ops[3] or "x" in ops[3]:
-                            parseKnownBits(ops[3], newreg)
-                    elif "powerOfTwo" in ops[3]:
-                        parsePowerTwo(ops[3], newreg, int(widthValue))
-                    elif "negative" in ops[4]:
-                        parseNegative(ops[4], newreg, int(widthValue))
-                    elif "nonNegative" in ops[4]:
-                        parseNonNegative(ops[4], newreg, int(widthValue))
-                    elif "knownBits" in ops[4]:
-                        if "0" in ops[4] or "1" in ops[4] or "x" in ops[4]:
-                            parseKnownBits(ops[4], newreg)
-                    elif "powerOfTwo" in ops[4]:
-                        parsePowerTwo(ops[4], newreg, int(widthValue))
-                elif len(ops) == 6:
-                    if "negative" in ops[0]:
-                        parseNegative(ops[0], newreg, int(widthValue))
-                    elif "nonNegative" in ops[0]:
-                        parseNonNegative(ops[0], newreg, int(widthValue))
-                    elif "knownBits" in ops[0]:
-                        if "0" in ops[0] or "1" in ops[0] or "x" in ops[0]:
-                            parseKnownBits(ops[0], newreg)
-                    elif "powerOfTwo" in ops[0]:
-                        parsePowerTwo(ops[0], newreg, int(widthValue))
-                    elif "negative" in ops[1]:
-                        parseNegative(ops[1], newreg, int(widthValue))
-                    elif "nonNegative" in ops[1]:
-                        parseNonNegative(ops[1], newreg, int(widthValue))
-                    elif "knownBits" in ops[1]:
-                        if "0" in ops[1] or "1" in ops[1] or "x" in ops[1]:
-                            parseKnownBits(ops[1], newreg)
-                    elif "powerOfTwo" in ops[1]:
-                        parsePowerTwo(ops[1], newreg, int(widthValue))
-                    elif "negative" in ops[2]:
-                        parseNegative(ops[2], newreg, int(widthValue))
-                    elif "nonNegative" in ops[2]:
-                        parseNonNegative(ops[2], newreg, int(widthValue))
-                    elif "knownBits" in ops[2]:
-                        if "0" in ops[2] or "1" in ops[2] or "x" in ops[2]:
-                            parseKnownBits(ops[2], newreg)
-                    elif "powerOfTwo" in ops[2]:
-                        parsePowerTwo(ops[2], newreg, int(widthValue))
-                    elif "negative" in ops[3]:
-                        parseNegative(ops[3], newreg, int(widthValue))
-                    elif "nonNegative" in ops[3]:
-                        parseNonNegative(ops[3], newreg, int(widthValue))
-                    elif "knownBits" in ops[3]:
-                        if "0" in ops[3] or "1" in ops[3] or "x" in ops[3]:
-                            parseKnownBits(ops[3], newreg)
-                    elif "powerOfTwo" in ops[3]:
-                        parsePowerTwo(ops[3], newreg, int(widthValue))
-                    elif "negative" in ops[4]:
-                        parseNegative(ops[4], newreg, int(widthValue))
-                    elif "nonNegative" in ops[4]:
-                        parseNonNegative(ops[4], newreg, int(widthValue))
-                    elif "knownBits" in ops[4]:
-                        if "0" in ops[4] or "1" in ops[4] or "x" in ops[4]:
-                            parseKnownBits(ops[4], newreg)
-                    elif "powerOfTwo" in ops[4]:
-                        parsePowerTwo(ops[4], newreg, int(widthValue))
-                    elif "negative" in ops[5]:
-                        parseNegative(ops[5], newreg, int(widthValue))
-                    elif "nonNegative" in ops[5]:
-                        parseNonNegative(ops[5], newreg, int(widthValue))
-                    elif "knownBits" in ops[5]:
-                        if "0" in ops[5] or "1" in ops[5] or "x" in ops[5]:
-                            parseKnownBits(ops[5], newreg)
-                    elif "powerOfTwo" in ops[5]:
-                        parsePowerTwo(ops[5], newreg, int(widthValue))
+                for j in ops:
+                    if "knownBits" in j:
+                        parseKnownBits(j, newreg)
+                    elif "negative" in j:
+                        parseNegative(j, newreg, int(widthValue))
+                    elif "nonNegative" in j:
+                        parseNonNegative(j, newreg, int(widthValue))
+                    elif "powerOfTwo" in j:
+                        parsePowerTwo(j, newreg, int(widthValue))
+                    elif "nonZero" in j:
+                        parsenonZero(j, newreg, int(widthValue))
             counter += 1
             continue
         for k, op in enumerate(ops):
@@ -658,6 +476,15 @@ def parsePowerTwo(s,reg, width):
         print "; " + str(reg) + " = 1 << %x" 
         print
 
+def parsenonZero(s,reg, width):
+    assert "(" in s and ")" in s
+    s = s.strip("(").strip(")")
+    if s == "nonZero":
+        print "; for " + str(width) + " bit value " + s
+        nonZero[reg] = 1
+        print "; " + str(reg) + " != 0" 
+        print
+
 def printFuncHeader():
     regtmps = {}
     for i, reg in enumerate(argmap.values()):
@@ -693,7 +520,7 @@ def printFuncHeader():
             regnum = reg[1:]
             w = widths[reg]
             old = regtmps[reg]
-            name = "%t3_" + regnum
+            name = "%t4_" + regnum
             regtmps[reg] = name
             masks = "  " + old + " = and " + w + " " + name + ", " + str(nonNegative[reg]) + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_nonNegative\n" + masks
@@ -701,10 +528,28 @@ def printFuncHeader():
             regnum = reg[1:]
             w = widths[reg]
             old = regtmps[reg]
-            name = "%t3_" + regnum
+            name = "%t5_" + regnum
             regtmps[reg] = name
             masks = "  " + old + " = shl " + w + " " + "1" + ", " + name + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_powerOfTwo\n" + masks
+        #Keep this non-zero code at the end, if more DFA's come add the if-condition for it above this if-code for nonzero
+        #There might be some issues with alloc, pointers etc. in generated LLVM IR
+        if reg in nonZero:
+            regnum = reg[1:]
+            w = widths[reg]
+            old = regtmps[reg]
+            name = "%t6_" + regnum
+            regtmps[reg] = name
+            global MDRangePtr
+            global metadataStr
+            ptr = "%ptr_" + str(MDRangePtr)
+            masks = "  " + ptr + " = alloca " + w + "\n" +\
+            "  store " + w + " " + name + ", " + w + "* " + ptr + "\n" +\
+            "  " + old + " = load " + w + ", " + w + "* " + ptr + ", !range !" + str(MDRangePtr) + "\n" +\
+            "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_nonZero\n" + masks
+            metadataStr = metadataStr + "!" + str(MDRangePtr) + " = " + "!{ " + w + " 1" + ", " + w + " 0"+ " }\n"
+            MDRangePtr += 1
+
     # global declarations: dummy store, intrinsics
     print "target datalayout = \"e-m:e-i64:64-f80:128-n8:16:32:64-S128\"\n"
     for i, reg in enumerate(argmap.values()):
@@ -713,6 +558,7 @@ def printFuncHeader():
         print "@glob_" + reg[1:] + "_negative = external global " + widths[reg]
         print "@glob_" + reg[1:] + "_nonNegative = external global " + widths[reg]
         print "@glob_" + reg[1:] + "_powerOfTwo = external global " + widths[reg]
+        print "@glob_" + reg[1:] + "_nonZero = external global " + widths[reg]
     for decl in intrdecl.values():
         print decl
     print "\ndefine " + cand[1] + " @foo(",
@@ -792,3 +638,4 @@ printFuncHeader()
 printFuncBody(insts)
 printPCs()
 printLHSFuncFooter()
+print metadataStr
