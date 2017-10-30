@@ -57,6 +57,11 @@ public:
                             const std::vector<InstMapping> &PCs,
                             Inst *LHS, llvm::APInt &PowerTwo,
                             InstContext &IC) = 0;
+  virtual
+  std::error_code nonZero(const BlockPCs &BPCs,
+                            const std::vector<InstMapping> &PCs,
+                            Inst *LHS, llvm::APInt &NonZero,
+                            InstContext &IC) = 0;
 };
 
 std::unique_ptr<Solver> createBaseSolver(

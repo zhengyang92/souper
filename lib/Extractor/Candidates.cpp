@@ -66,6 +66,11 @@ static llvm::cl::opt<bool> PrintPowerTwoAtReturn(
     "print-power-two-at-return",
     llvm::cl::desc("Print power two dfa in each value returned from a function (default=false)"),
     llvm::cl::init(false));
+static llvm::cl::opt<bool> PrintNonZeroAtReturn(
+    "print-non-zero-at-return",
+    llvm::cl::desc("Print non zero dfa in each value returned from a function (default=false)"),
+    llvm::cl::init(false));
+
 
 using namespace llvm;
 using namespace klee;
@@ -777,6 +782,16 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
         PowerTwo = isKnownToBeAPowerOfTwo(V, DL);
         if (PowerTwo)
           llvm::outs() << "known at return: " << "(powerOfTwo)" << "\n";
+        else
+          llvm::outs() << "known at return: " << "" << "\n";
+      }
+      if (PrintNonZeroAtReturn && isa<ReturnInst>(I)) {
+        auto V = I.getOperand(0);
+        auto DL = F.getParent()->getDataLayout();
+        bool NonZero = 0;
+        NonZero = isKnownNonZero(V, DL);
+        if (NonZero)
+          llvm::outs() << "known at return: " << "(nonZero)" << "\n";
         else
           llvm::outs() << "known at return: " << "" << "\n";
       }

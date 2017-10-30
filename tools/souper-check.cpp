@@ -43,7 +43,9 @@ static cl::opt<bool> InferPowerTwo("infer-power-two",
     cl::desc("Compute power of two for the candidate (default=false)"),
     cl::init(false));
 
-
+static cl::opt<bool> InferNonZero("infer-non-zero",
+    cl::desc("Compute non zero for the candidate (default=false)"),
+    cl::init(false));
 
 static cl::opt<bool> PrintRepl("print-replacement",
     cl::desc("Print the replacement, if valid (default=false)"),
@@ -138,6 +140,21 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
     //FIXME
     if (PowTwo.getBoolValue())
       s = "(powerOfTwo)";
+    else
+      s = "";
+    llvm::outs() << "known from souper: " << s << "\n";
+    return 0;
+  }
+
+  if (InferNonZero) {
+    APInt NonZero;
+    if (std::error_code EC = S->nonZero(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                            NonZero, IC)) {
+      llvm::errs() << EC.message() << '\n';
+    }
+    std::string s;
+    if (NonZero.getBoolValue())
+      s = "(nonZero)";
     else
       s = "";
     llvm::outs() << "known from souper: " << s << "\n";

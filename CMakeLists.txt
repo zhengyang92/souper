@@ -320,6 +320,7 @@ configure_file(${CMAKE_SOURCE_DIR}/utils/cache_knownbits.in ${CMAKE_BINARY_DIR}/
 configure_file(${CMAKE_SOURCE_DIR}/utils/cache_neg.in ${CMAKE_BINARY_DIR}/cache_neg @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/cache_nonNeg.in ${CMAKE_BINARY_DIR}/cache_nonNeg @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/cache_power.in ${CMAKE_BINARY_DIR}/cache_power @ONLY)
+configure_file(${CMAKE_SOURCE_DIR}/utils/cache_nonZero.in ${CMAKE_BINARY_DIR}/cache_nonZero @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/cache_import.in ${CMAKE_BINARY_DIR}/cache_import @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/cache_infer.in ${CMAKE_BINARY_DIR}/cache_infer @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/souper2llvm.in ${CMAKE_BINARY_DIR}/souper2llvm @ONLY)

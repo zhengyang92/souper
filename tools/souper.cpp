@@ -55,7 +55,10 @@ static cl::opt<bool> PrintKnownBits("print-known-bits", cl::init(false),
     cl::desc("Print known bits (default=false)"));
 
 static cl::opt<bool> PrintPowerTwo("print-power-two", cl::init(false),
-    cl::desc("Print Non power of two fact (default=false)"));
+    cl::desc("Print power of two fact (default=false)"));
+
+static cl::opt<bool> PrintNonZero("print-non-zero", cl::init(false),
+    cl::desc("Print non-zero fact (default=false)"));
 
 static cl::opt<bool>
 Check("check", cl::desc("Check input for expected results"),

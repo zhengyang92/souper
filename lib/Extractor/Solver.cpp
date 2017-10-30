@@ -201,6 +201,31 @@ public:
     return std::error_code();
   }
 
+  std::error_code nonZero(const BlockPCs &BPCs,
+                              const std::vector<InstMapping> &PCs,
+                              Inst *LHS, APInt &NonZero,
+                              InstContext &IC) override {
+    unsigned W = LHS->Width;
+    APInt ZeroGuess(W, 0, false);
+    APInt TrueGuess(1, 1, false);
+    Inst *Zero = IC.getConst(ZeroGuess);
+    Inst *True = IC.getConst(TrueGuess);
+    Inst *NonZeroGuess = IC.getInst(Inst::Ne, 1, {LHS, Zero});
+    InstMapping Mapping(NonZeroGuess, True);
+    bool IsSat;
+    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
+    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
+                                                  IsSat, 0, 0, Timeout);
+    if (EC)
+      llvm::report_fatal_error("stopping due to error");
+
+    if (!IsSat)
+      NonZero = APInt(1, 1, false);
+    else
+      NonZero = APInt(1, 0, false);
+    return std::error_code();
+  }
+
   std::error_code infer(const BlockPCs &BPCs,
                         const std::vector<InstMapping> &PCs,
                         Inst *LHS, Inst *&RHS, InstContext &IC) override {
@@ -435,6 +460,13 @@ public:
     return UnderlyingSolver->powerTwo(BPCs, PCs, LHS, PowerTwo, IC);
   }
 
+  std::error_code nonZero(const BlockPCs &BPCs,
+                            const std::vector<InstMapping> &PCs,
+                            Inst *LHS, APInt &NonZero,
+                            InstContext &IC) override {
+    return UnderlyingSolver->nonZero(BPCs, PCs, LHS, NonZero, IC);
+  }
+
 };
 
 class ExternalCachingSolver : public Solver {
@@ -523,6 +555,13 @@ public:
                             Inst *LHS, APInt &PowerTwo,
                             InstContext &IC) override {
     return UnderlyingSolver->powerTwo(BPCs, PCs, LHS, PowerTwo, IC);
+  }
+
+  std::error_code nonZero(const BlockPCs &BPCs,
+                            const std::vector<InstMapping> &PCs,
+                            Inst *LHS, APInt &NonZero,
+                            InstContext &IC) override {
+    return UnderlyingSolver->nonZero(BPCs, PCs, LHS, NonZero, IC);
   }
 
 };
