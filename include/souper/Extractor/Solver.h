@@ -62,6 +62,11 @@ public:
                             const std::vector<InstMapping> &PCs,
                             Inst *LHS, llvm::APInt &NonZero,
                             InstContext &IC) = 0;
+  virtual
+  std::error_code signBits(const BlockPCs &BPCs,
+                            const std::vector<InstMapping> &PCs,
+                            Inst *LHS, unsigned &SignBits,
+                            InstContext &IC) = 0;
 };
 
 std::unique_ptr<Solver> createBaseSolver(

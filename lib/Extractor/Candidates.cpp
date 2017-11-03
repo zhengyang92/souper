@@ -70,6 +70,10 @@ static llvm::cl::opt<bool> PrintNonZeroAtReturn(
     "print-non-zero-at-return",
     llvm::cl::desc("Print non zero dfa in each value returned from a function (default=false)"),
     llvm::cl::init(false));
+static llvm::cl::opt<bool> PrintSignBitsAtReturn(
+    "print-sign-bits-at-return",
+    llvm::cl::desc("Print sign bits dfa in each value returned from a function (default=false)"),
+    llvm::cl::init(false));
 
 
 using namespace llvm;
@@ -795,6 +799,17 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
         else
           llvm::outs() << "known at return: " << "" << "\n";
       }
+      if (PrintSignBitsAtReturn && isa<ReturnInst>(I)) {
+        auto V = I.getOperand(0);
+        auto DL = F.getParent()->getDataLayout();
+        unsigned NumSignBits = 1;
+        NumSignBits = ComputeNumSignBits(V, DL);
+        if (NumSignBits > 1)
+          llvm::outs() << "known at return: " << NumSignBits << "\n";
+        else
+          llvm::outs() << "known at return: " << "" << "\n";
+      }
+      //NumSignBits = ComputeNumSignBits(V, DL);
       if (I.getType()->isIntegerTy())
         BCS->Replacements.emplace_back(&I, InstMapping(EB.get(&I), 0));
     }

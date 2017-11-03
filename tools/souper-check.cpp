@@ -47,6 +47,10 @@ static cl::opt<bool> InferNonZero("infer-non-zero",
     cl::desc("Compute non zero for the candidate (default=false)"),
     cl::init(false));
 
+static cl::opt<bool> InferSignBits("infer-sign-bits",
+    cl::desc("Compute sign bits for the candidate (default=false)"),
+    cl::init(false));
+
 static cl::opt<bool> PrintRepl("print-replacement",
     cl::desc("Print the replacement, if valid (default=false)"),
     cl::init(false));
@@ -137,7 +141,6 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
       llvm::errs() << EC.message() << '\n';
     }
     std::string s;
-    //FIXME
     if (PowTwo.getBoolValue())
       s = "(powerOfTwo)";
     else
@@ -155,6 +158,21 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
     std::string s;
     if (NonZero.getBoolValue())
       s = "(nonZero)";
+    else
+      s = "";
+    llvm::outs() << "known from souper: " << s << "\n";
+    return 0;
+  }
+
+  if (InferSignBits) {
+    unsigned SignBits;
+    if (std::error_code EC = S->signBits(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                            SignBits, IC)) {
+      llvm::errs() << EC.message() << '\n';
+    }
+    std::string s;
+    if (SignBits > 1)
+      s = std::to_string(SignBits);
     else
       s = "";
     llvm::outs() << "known from souper: " << s << "\n";

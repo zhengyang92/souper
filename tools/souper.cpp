@@ -60,6 +60,9 @@ static cl::opt<bool> PrintPowerTwo("print-power-two", cl::init(false),
 static cl::opt<bool> PrintNonZero("print-non-zero", cl::init(false),
     cl::desc("Print non-zero fact (default=false)"));
 
+static cl::opt<bool> PrintSignBits("print-sign-bits", cl::init(false),
+    cl::desc("Print sign bits fact (default=false)"));
+
 static cl::opt<bool>
 Check("check", cl::desc("Check input for expected results"),
     cl::init(false));
