@@ -255,10 +255,14 @@ sub go($) {
 	my $llvm_stronger = 0;
 	my $souper_stronger = 0;
         #FIXME for signbits
-        if ($sk eq "(nonZero)") {
+        if ($sk gt $lk) {
             $souper_stronger = 1;
         }
-        if ($lk eq "(nonZero)") {
+        if ($lk gt $sk) {
+            $llvm_stronger = 1;
+        }
+        if ($sk eq $lk) {
+            $souper_stronger = 1;
             $llvm_stronger = 1;
         }
 	if ($llvm_stronger && $souper_stronger) {

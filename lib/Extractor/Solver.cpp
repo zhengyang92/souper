@@ -232,13 +232,10 @@ public:
                               InstContext &IC) override {
     unsigned W = LHS->Width;
     SignBits = 1;
-    APInt OneLessWidth(W, W-1, false);
-    Inst *OneLessW = IC.getConst(OneLessWidth);
-    APInt ConstOne(W, 1, false);
-    Inst *One = IC.getConst(ConstOne);
     APInt Zero(W, 0, false);
     Inst *AllZeros = IC.getConst(Zero);
-    Inst *AllOnes = IC.getInst(Inst::AShr, W, {IC.getInst(Inst::Shl, W, {One, OneLessW}), OneLessW});
+    APInt Ones = APInt::getAllOnesValue(W);
+    Inst *AllOnes = IC.getConst(Ones);
     APInt TrueGuess(1, 1, false);
     Inst *True = IC.getConst(TrueGuess);
     // guess signbits starting from 2, because 1 is by default
@@ -246,8 +243,8 @@ public:
       APInt SA(W, W-I, false);
       Inst *ShiftAmt = IC.getConst(SA);
       Inst *Res = IC.getInst(Inst::AShr, W, {LHS, ShiftAmt}); 
-      Inst *Guess1 = IC.getInst(Inst::Eq, 1, {Res,AllZeros});
-      Inst *Guess2 = IC.getInst(Inst::Eq, 1, {Res,AllOnes});
+      Inst *Guess1 = IC.getInst(Inst::Eq, 1, {Res, AllZeros});
+      Inst *Guess2 = IC.getInst(Inst::Eq, 1, {Res, AllOnes});
       Inst *Guess = IC.getInst(Inst::Or, 1, {Guess1, Guess2}); 
       InstMapping Mapping(Guess, True);
       bool IsSat;
@@ -257,11 +254,11 @@ public:
       if (EC)
         llvm::report_fatal_error("stopping due to error");
   
-      if (!IsSat) {
+      if (!IsSat) { //guess is correct, keep looking for more signbits
         SignBits = I;
-        break;
-      } else {
         continue;
+      } else {
+        break;
       }
     }
     return std::error_code();

@@ -17,7 +17,7 @@
 import fileinput, sys, copy
 import collections
 
-widths, knownzeros, knownones, Negative, nonNegative, powerTwo, nonZero = dict(), dict(), dict(), dict(), dict(), dict(), dict()
+widths, knownzeros, knownones, Negative, nonNegative, powerTwo, nonZero, signBits = dict(), dict(), dict(), dict(), dict(), dict(), dict(), dict()
 pcmap = collections.OrderedDict()
 argmap = dict()
 cand = None
@@ -32,6 +32,7 @@ independent = []
 flagPC = 0
 MDRangePtr = 0
 metadataStr = ""
+truncCount = 0
 
 # souper IR -> LLVM inst map
 instmap = {
@@ -244,6 +245,8 @@ def propagateArgNames(insts):
                         parsePowerTwo(j, newreg, int(widthValue))
                     elif "nonZero" in j:
                         parsenonZero(j, newreg, int(widthValue))
+                    elif "signBits" in j:
+                        parsesignBits(j, newreg, int(widthValue))
             counter += 1
             continue
         for k, op in enumerate(ops):
@@ -485,6 +488,14 @@ def parsenonZero(s,reg, width):
         print "; " + str(reg) + " != 0" 
         print
 
+def parsesignBits(s,reg, width):
+    assert "(" in s and ")" in s and "signBits=" in s
+    s = s.strip("(").strip(")").strip("signBits=")
+    print "; for signbits = " + s
+    signBits[reg] = s
+    print "; " + str(reg) + " signbits" 
+    print
+
 def printFuncHeader():
     regtmps = {}
     for i, reg in enumerate(argmap.values()):
@@ -532,13 +543,28 @@ def printFuncHeader():
             regtmps[reg] = name
             masks = "  " + old + " = shl " + w + " " + "1" + ", " + name + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_powerOfTwo\n" + masks
+        if reg in signBits:
+            regnum = reg[1:]
+            w = widths[reg]
+            old = regtmps[reg]
+            name = "%t6_" + regnum
+            regtmps[reg] = name
+            global truncCount
+            global truncStr
+            sign = "%s_" + str(truncCount)
+            org_width = int(w.strip("i"))
+            red_width = org_width + 1 - int(signBits[reg])
+            masks = "  " + sign + " = trunc " + w + " " + name + " to " + "i" + str(red_width) + "\n" +\
+            "  " + old + " = sext " + "i" + str(red_width) + " " + sign + " to " + w + "\n" +\
+            "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_signBits\n" + masks
+            truncCount += 1
         #Keep this non-zero code at the end, if more DFA's come add the if-condition for it above this if-code for nonzero
         #There might be some issues with alloc, pointers etc. in generated LLVM IR
         if reg in nonZero:
             regnum = reg[1:]
             w = widths[reg]
             old = regtmps[reg]
-            name = "%t6_" + regnum
+            name = "%t7_" + regnum
             regtmps[reg] = name
             global MDRangePtr
             global metadataStr
@@ -559,6 +585,7 @@ def printFuncHeader():
         print "@glob_" + reg[1:] + "_nonNegative = external global " + widths[reg]
         print "@glob_" + reg[1:] + "_powerOfTwo = external global " + widths[reg]
         print "@glob_" + reg[1:] + "_nonZero = external global " + widths[reg]
+        print "@glob_" + reg[1:] + "_signBits = external global " + widths[reg]
     for decl in intrdecl.values():
         print decl
     print "\ndefine " + cand[1] + " @foo(",
