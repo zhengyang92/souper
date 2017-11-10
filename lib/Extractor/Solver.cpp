@@ -230,26 +230,40 @@ public:
                               const std::vector<InstMapping> &PCs,
                               Inst *LHS, unsigned &SignBits,
                               InstContext &IC) override {
-    #if 0
     unsigned W = LHS->Width;
-    APInt ZeroGuess(W, 0, false);
+    SignBits = 1;
+    APInt OneLessWidth(W, W-1, false);
+    Inst *OneLessW = IC.getConst(OneLessWidth);
+    APInt ConstOne(W, 1, false);
+    Inst *One = IC.getConst(ConstOne);
+    APInt Zero(W, 0, false);
+    Inst *AllZeros = IC.getConst(Zero);
+    Inst *AllOnes = IC.getInst(Inst::AShr, W, {IC.getInst(Inst::Shl, W, {One, OneLessW}), OneLessW});
     APInt TrueGuess(1, 1, false);
-    Inst *Zero = IC.getConst(ZeroGuess);
     Inst *True = IC.getConst(TrueGuess);
-    Inst *NonZeroGuess = IC.getInst(Inst::Ne, 1, {LHS, Zero});
-    InstMapping Mapping(NonZeroGuess, True);
-    bool IsSat;
-    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
-    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
-                                                  IsSat, 0, 0, Timeout);
-    if (EC)
-      llvm::report_fatal_error("stopping due to error");
-
-    if (!IsSat)
-      NonZero = APInt(1, 1, false);
-    else
-      NonZero = APInt(1, 0, false);
-    #endif
+    // guess signbits starting from 2, because 1 is by default
+    for (unsigned I=2; I<=W; I++) {
+      APInt SA(W, W-I, false);
+      Inst *ShiftAmt = IC.getConst(SA);
+      Inst *Res = IC.getInst(Inst::AShr, W, {LHS, ShiftAmt}); 
+      Inst *Guess1 = IC.getInst(Inst::Eq, 1, {Res,AllZeros});
+      Inst *Guess2 = IC.getInst(Inst::Eq, 1, {Res,AllOnes});
+      Inst *Guess = IC.getInst(Inst::Or, 1, {Guess1, Guess2}); 
+      InstMapping Mapping(Guess, True);
+      bool IsSat;
+      Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
+      std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
+                                                    IsSat, 0, 0, Timeout);
+      if (EC)
+        llvm::report_fatal_error("stopping due to error");
+  
+      if (!IsSat) {
+        SignBits = I;
+        break;
+      } else {
+        continue;
+      }
+    }
     return std::error_code();
   }
 
