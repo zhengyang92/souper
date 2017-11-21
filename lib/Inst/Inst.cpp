@@ -704,10 +704,10 @@ void souper::PrintReplacement(llvm::raw_ostream &Out,
   setNeeded(Mapping.LHS);
 
   ReplacementContext Context;
-  Context.printPCs(PCs, Out, printNames);
-  Context.printBlockPCs(BPCs, Out, printNames);
-  std::string SRef = Context.printInst(Mapping.LHS, Out, printNames);
-  std::string RRef = Context.printInst(Mapping.RHS, Out, printNames);
+  Context.printPCs(PCs, Out, printNames, true);
+  Context.printBlockPCs(BPCs, Out, printNames, true);
+  std::string SRef = Context.printInst(Mapping.LHS, Out, printNames, true);
+  std::string RRef = Context.printInst(Mapping.RHS, Out, printNames, true);
   if (!Mapping.LHS->DemandedBits.isAllOnesValue()) {
     Out << "cand " << SRef << " " << RRef << " (" << "demandedBits="
         << Inst::getDemandedBitsString(Mapping.LHS->DemandedBits)
@@ -737,7 +737,7 @@ void souper::PrintReplacementLHS(llvm::raw_ostream &Out,
   setNeeded(LHS);
   //Context.printPCs(PCs, Out, printNames);
   //Context.printBlockPCs(BPCs, Out, printNames);
-  std::string SRef = Context.printInst(LHS, Out, printNames);
+  std::string SRef = Context.printInst(LHS, Out, printNames, true);
   if (!LHS->DemandedBits.isAllOnesValue()) {
     Out << "infer " << SRef << " (" << "demandedBits="
         << Inst::getDemandedBitsString(LHS->DemandedBits)

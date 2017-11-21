@@ -271,7 +271,6 @@ public:
     DominatorTree *DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
     if (!DT)
       report_fatal_error("getDomTree() failed");
-    FunctionCandidateSet CS = ExtractCandidatesFromPass(F, LI, IC, EBC);
     DemandedBits *DB = &getAnalysis<DemandedBitsWrapperPass>(*F).getDemandedBits();
     if (!DB)
       report_fatal_error("getDemandedBits() failed");
@@ -368,12 +367,9 @@ public:
       EBC.Origins.insert(std::pair<Inst *, Value *>(Cand.Mapping.LHS, NewVal));
 
       if (ReplaceCount >= FirstReplace && ReplaceCount <= LastReplace) {
-        BasicBlock::iterator BI(ReplacedInst);
-        ReplaceInstWithValue(ReplacedInst->getParent()->getInstList(), BI,
-                             NewVal);
         if (DynamicProfile)
           dynamicProfile(F, Cand);
-        I->replaceAllUsesWith(CI);
+        I->replaceAllUsesWith(NewVal);
         Changed = true;
       } else {
         if (DebugSouperPass)
