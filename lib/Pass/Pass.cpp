@@ -15,6 +15,7 @@
 #define DEBUG_TYPE "souper"
 
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/DemandedBits.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Constants.h"
@@ -101,6 +102,7 @@ public:
   void getAnalysisUsage(AnalysisUsage &Info) const {
     Info.addRequired<LoopInfoWrapperPass>();
     Info.addRequired<DominatorTreeWrapperPass>();
+    Info.addRequired<DemandedBitsWrapperPass>();
   }
 
   void dynamicProfile(Function *F, CandidateReplacement &Cand) {
@@ -270,6 +272,10 @@ public:
     if (!DT)
       report_fatal_error("getDomTree() failed");
     FunctionCandidateSet CS = ExtractCandidatesFromPass(F, LI, IC, EBC);
+    DemandedBits *DB = &getAnalysis<DemandedBitsWrapperPass>(*F).getDemandedBits();
+    if (!DB)
+      report_fatal_error("getDemandedBits() failed");
+    FunctionCandidateSet CS = ExtractCandidatesFromPass(F, LI, DB, IC, EBC);
 
     std::string FunctionName;
     if (F->hasLocalLinkage()) {
@@ -367,6 +373,7 @@ public:
                              NewVal);
         if (DynamicProfile)
           dynamicProfile(F, Cand);
+        I->replaceAllUsesWith(CI);
         Changed = true;
       } else {
         if (DebugSouperPass)
@@ -404,6 +411,7 @@ void initializeSouperPassPass(llvm::PassRegistry &);
 INITIALIZE_PASS_BEGIN(SouperPass, "souper", "Souper super-optimizer pass",
                       false, false)
 INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(DemandedBitsWrapperPass)
 INITIALIZE_PASS_END(SouperPass, "souper", "Souper super-optimizer pass", false,
                     false)
 
