@@ -611,12 +611,19 @@ def printPCs():
         global cnt
         global cnt2
         global cnt3
-        s = ""
+        #s = ""
         for k, pc in enumerate(pcs):
-            s += "  %tmp" + str(cnt) + " = icmp eq " + widths[pc[0]] + " " \
-                         + pc[3][0][0] + ", " + pc[0] + "\n"
-            s += "  br i1 %tmp" + str(cnt) + ", label %cont" + str(cnt2) \
-                                + ", label %out" + str(cnt3) +"\n"
+            s = ""
+            if pc[3][0][0] == "0":
+#            s += "  %tmp" + str(cnt) + " = icmp eq " + widths[pc[0]] + " " \
+#                         + pc[3][0][0] + ", " + pc[0] + "\n"
+#            s += "  br i1 %tmp" + str(cnt) + ", label %cont" + str(cnt2) \
+#                                + ", label %out" + str(cnt3) +"\n"
+                s += "  br i1 " + pc[0] + ", label %out" + str(cnt3) \
+                                    + ", label %cont" + str(cnt2) +"\n"
+            elif pc[3][0][0] == "1":
+                s += "  br i1 " + pc[0] + ", label %cont" + str(cnt2) \
+                                    + ", label %out" + str(cnt3) +"\n"
             s += "out" + str(cnt3) + ":" + "\n"
             #s += "  ret " + cand[1] + " 0\n"
             s += "  unreachable\n"
@@ -627,7 +634,8 @@ def printPCs():
             cnt2 += 1
             cnt3 += 1
             print s
-            if reg in combinedList:
+            #if reg in combinedList:
+            if reg in combinedList and ((len(pcs)-k) == 1):
                 for i in combinedList[reg]:
                     print translateInstToLLVM(i)
 
