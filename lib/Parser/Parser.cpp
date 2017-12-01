@@ -194,6 +194,10 @@ FoundChar:
       ++Begin;
     } while (Begin != End && *Begin >= '0' && *Begin <= '9');
     const char *NumEnd = Begin;
+    if ((NumEnd - NumBegin) == 1 && *NumBegin == '-') {
+      ErrStr = "unexpected character following a negative sign";
+      return Token{Token::Error, Begin, 0, APInt()};
+    }
     if (Begin != End && *Begin == ':') {
       ++Begin;
       if (Begin == End || *Begin != 'i') {
@@ -214,6 +218,11 @@ FoundChar:
       if (Width == 0) {
         ErrStr = "width must be at least 1";
         return Token{Token::Error, WidthBegin, 0, APInt()};
+      }
+      // this calculation is from an assertion in APInt::fromString()
+      if ((((NumEnd - NumBegin) - 1) * 64) / 22 > Width) {
+        ErrStr = "integer too large for its width";
+        return Token{Token::Error, Begin, 0, APInt()};
       }
       return Token{Token::Int, NumBegin, size_t(Begin - NumBegin),
                    APInt(Width, StringRef(NumBegin, NumEnd - NumBegin), 10)};
@@ -537,6 +546,9 @@ bool Parser::typeCheckInst(Inst::Kind IK, unsigned &Width,
   case Inst::Ctlz:
     MaxOps = MinOps = 1;
     break;
+
+  default:
+    llvm::report_fatal_error("unhandled");
   }
 
   if (MinOps == MaxOps && Ops.size() != MinOps) {
@@ -622,9 +634,21 @@ bool Parser::typeCheckInst(Inst::Kind IK, unsigned &Width,
           ErrStr = "extract value expects an aggregate type";
           return false;
       }
-    } else if (Ops[1]->Val.getZExtValue() == 1)
-      ExpectedWidth = 1;
-    else
+    } else if (Ops[1]->Val.getZExtValue() == 1) {
+      switch (Ops[0]->K) {
+        case Inst::SAddWithOverflow:
+        case Inst::UAddWithOverflow:
+        case Inst::SSubWithOverflow:
+        case Inst::USubWithOverflow:
+        case Inst::SMulWithOverflow:
+        case Inst::UMulWithOverflow:
+          ExpectedWidth = 1;
+          break;
+        default:
+          ErrStr = "extract value expects an aggregate type";
+          return false;
+      }
+    } else
       ErrStr = "extractvalue inst doesn't expect index value other than 0 or 1";
     break;
 
@@ -751,6 +775,19 @@ bool Parser::parseLine(std::string &ErrStr) {
         if (!parseDemandedBits(ErrStr, Cand.LHS))
           return false;
 
+        switch(Cand.LHS->K) {
+          case Inst::SAddWithOverflow:
+          case Inst::UAddWithOverflow:
+          case Inst::SSubWithOverflow:
+          case Inst::USubWithOverflow:
+          case Inst::SMulWithOverflow:
+          case Inst::UMulWithOverflow:
+            ErrStr = makeErrStr("unexpected instruction kind in cand");
+            return false;
+          default:
+            break;
+        }
+
         Reps.push_back(ParsedReplacement{Cand, std::move(PCs),
                                          std::move(BPCs)});
         nextReplacement();
@@ -762,6 +799,10 @@ bool Parser::parseLine(std::string &ErrStr) {
           return false;
         }
         if (!consumeToken(ErrStr)) return false;
+        if (CurTok.K != Token::ValName) {
+          ErrStr = makeErrStr("unexpected infer operand type");
+          return false;
+        }
         if (LHS) {
           ErrStr = makeErrStr("Not expecting a second 'infer'");
           return false;
@@ -772,6 +813,19 @@ bool Parser::parseLine(std::string &ErrStr) {
 
         if (!parseDemandedBits(ErrStr, LHS))
           return false;
+
+        switch (LHS->K) {
+          case Inst::SAddWithOverflow:
+          case Inst::UAddWithOverflow:
+          case Inst::SSubWithOverflow:
+          case Inst::USubWithOverflow:
+          case Inst::SMulWithOverflow:
+          case Inst::UMulWithOverflow:
+            ErrStr = makeErrStr("unexpected instruction kind in infer");
+            return false;
+          default:
+            break;
+        }
 
         if (RK == ReplacementKind::ParseLHS) {
           Reps.push_back(ParsedReplacement{InstMapping(LHS, 0),
@@ -911,7 +965,7 @@ bool Parser::parseLine(std::string &ErrStr) {
           return false;
         }
       }
-      if (IK == Inst::Kind(~0)) {
+      if (IK == Inst::None) {
         if (CurTok.str() == "block") {
           if (InstWidth != 0) {
             ErrStr = makeErrStr(TP, "blocks may not have a width");
@@ -925,7 +979,11 @@ bool Parser::parseLine(std::string &ErrStr) {
             return false;
           }
           unsigned Preds = CurTok.Val.getLimitedValue();
-
+          if (Preds > MaxPreds) {
+            ErrStr = makeErrStr(std::string(std::to_string(Preds) +
+                                            " is too many block predecessors"));
+            return false;
+          }
           Context.setBlock(InstName, IC.createBlock(Preds));
           return consumeToken(ErrStr);
         } else {
@@ -955,20 +1013,19 @@ bool Parser::parseLine(std::string &ErrStr) {
               return false;
             switch (CurTok.K) {
               case Token::KnownBits:
-                for (unsigned i=0; i<InstWidth; ++i) {
-                  if (CurTok.PatternString[i] == '0')
-                    Zero += ConstOne.shl(CurTok.PatternString.length()-1-i);
-                  else if (CurTok.PatternString[i] == '1')
-                    One += ConstOne.shl(CurTok.PatternString.length()-1-i);
-                  else if (CurTok.PatternString[i] == 'x') ;
-                  else {
-                    ErrStr = makeErrStr(TP, "invalid knownBits string");
-                    return false;
-                  }
-                }
                 if (InstWidth != CurTok.PatternString.length()) {
                   ErrStr = makeErrStr(TP, "knownbits pattern must be of same length as var width");
                   return false;
+                }
+                for (unsigned i = 0; i < InstWidth; ++i) {
+                  if (CurTok.PatternString[i] == '0')
+                    Zero += ConstOne.shl(CurTok.PatternString.length() - 1 - i);
+                  else if (CurTok.PatternString[i] == '1')
+                    One += ConstOne.shl(CurTok.PatternString.length() - 1 - i);
+                  else if (CurTok.PatternString[i] != 'x') {
+                    ErrStr = makeErrStr(TP, "invalid knownBits string");
+                    return false;
+                  }
                 }
                 if (!consumeToken(ErrStr))
                   return false;
