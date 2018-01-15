@@ -27,6 +27,8 @@ static const int ExprDepth = 2;
 
 namespace souper {
 
+const unsigned MaxPreds = 100000;
+
 struct Block {
   std::string Name;
   unsigned Preds;
@@ -96,7 +98,9 @@ struct Inst : llvm::FoldingSetNode {
     SMulO,
     UMulWithOverflow,
     UMulO,
-  } Kind;
+
+    None,
+} Kind;
 
   Kind K;
   unsigned Number;
