@@ -17,8 +17,9 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/DemandedBits.h"
 #include "llvm/Analysis/LoopInfo.h"
-#include "llvm/IR/Dominators.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/IRBuilder.h"
@@ -36,6 +37,9 @@
 #include "souper/Tool/GetSolverFromArgs.h"
 #include "souper/Tool/CandidateMapUtils.h"
 #include "set"
+
+STATISTIC(InstructionReplaced, "Number of instructions replaced by another instruction");
+STATISTIC(DominanceCheckFailed, "Number of failed replacement due to dominance check");
 
 using namespace souper;
 using namespace llvm;
@@ -62,10 +66,6 @@ static cl::opt<bool> DynamicProfile("souper-dynamic-profile", cl::init(false),
 
 static cl::opt<bool> StaticProfile("souper-static-profile", cl::init(false),
     cl::desc("Static profiling of Souper optimizations (default=false)"));
-
-static cl::opt<bool> IgnoreSolverErrors("souper-ignore-solver-errors",
-                                        cl::init(false),
-                                        cl::desc("Ignore solver errors"));
 
 static cl::opt<unsigned> FirstReplace("souper-first-opt", cl::Hidden,
     cl::init(0),
@@ -103,6 +103,7 @@ public:
     Info.addRequired<LoopInfoWrapperPass>();
     Info.addRequired<DominatorTreeWrapperPass>();
     Info.addRequired<DemandedBitsWrapperPass>();
+    Info.addRequired<TargetLibraryInfoWrapperPass>();
   }
 
   void dynamicProfile(Function *F, CandidateReplacement &Cand) {
@@ -170,7 +171,7 @@ public:
   }
 
   Value *getValue(Inst *I, Instruction *ReplacedInst,
-                  ExprBuilderContext &EBC, DominatorTree *DT,
+                  ExprBuilderContext &EBC, DominatorTree &DT,
                   IRBuilder<> &Builder, Module *M) {
     Type *T = Type::getIntNTy(ReplacedInst->getContext(), I->Width);
     if (I->K == Inst::Const) {
@@ -183,8 +184,13 @@ public:
         if (V->getType() != T)
           continue;
         if (auto IP = dyn_cast<Instruction>(V)) {
-          if (DT->dominates(IP->getParent(), ReplacedInst->getParent()))
+          // Dominance check
+          if (DT.dominates(IP, ReplacedInst)) {
+            ++InstructionReplaced;
             return V;
+          } else {
+            ++DominanceCheckFailed;
+          }
         } else if (isa<Argument>(V) || isa<Constant>(V)) {
           return V;
         } else {
@@ -258,6 +264,8 @@ public:
       report_fatal_error((std::string)"Unhandled Souper instruction " +
                          Inst::getKindName(I->K) + " in getValue()");
     }
+    report_fatal_error((std::string)"Unhandled Souper instruction " +
+                       Inst::getKindName(I->K) + " in getValue()");
   }
 
   bool runOnFunction(Function *F) {
@@ -268,13 +276,14 @@ public:
     LoopInfo *LI = &getAnalysis<LoopInfoWrapperPass>(*F).getLoopInfo();
     if (!LI)
       report_fatal_error("getLoopInfo() failed");
-    DominatorTree *DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
-    if (!DT)
-      report_fatal_error("getDomTree() failed");
+    auto &DT = getAnalysis<DominatorTreeWrapperPass>(*F).getDomTree();
     DemandedBits *DB = &getAnalysis<DemandedBitsWrapperPass>(*F).getDemandedBits();
     if (!DB)
       report_fatal_error("getDemandedBits() failed");
-    FunctionCandidateSet CS = ExtractCandidatesFromPass(F, LI, DB, IC, EBC);
+    TargetLibraryInfo* TLI = &getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
+    if (!TLI)
+      report_fatal_error("getTLI() failed");
+    FunctionCandidateSet CS = ExtractCandidatesFromPass(F, LI, DB, TLI, IC, EBC);
 
     std::string FunctionName;
     if (F->hasLocalLinkage()) {
@@ -324,10 +333,8 @@ public:
       if (std::error_code EC =
           S->infer(Cand.BPCs, Cand.PCs, Cand.Mapping.LHS,
                    Cand.Mapping.RHS, IC)) {
-        if (EC == std::errc::timed_out)
-          continue;
-        if (IgnoreSolverErrors) {
-          llvm::errs() << "Unable to query solver: " + EC.message() + "\n";
+        if (EC == std::errc::timed_out ||
+            EC == std::errc::value_too_large) {
           continue;
         } else {
           report_fatal_error("Unable to query solver: " + EC.message() + "\n");
@@ -335,9 +342,22 @@ public:
       }
       if (!Cand.Mapping.RHS)
         continue;
+      
 
       Instruction *I = Cand.Origin.getInstruction();
       Instruction *ReplacedInst = Cand.Origin.getInstruction();
+      
+      IRBuilder<> Builder(ReplacedInst->getParent());
+      Builder.SetInsertPoint(ReplacedInst);
+
+      Value *NewVal = getValue(Cand.Mapping.RHS, ReplacedInst, EBC, DT,
+                               Builder, F->getParent());
+      if (!NewVal) {
+        if (DebugSouperPass)
+          errs() << "\"\n; replacement failed\n";
+        continue;
+      }
+
       if (DebugSouperPass) {
         errs() << "\n";
         errs() << "; In " << FunctionName <<":\n";
@@ -347,10 +367,6 @@ public:
         errs() << "\"\n; from \"";
         ReplacedInst->getDebugLoc().print(errs());
       }
-      IRBuilder<> Builder(ReplacedInst->getParent());
-      Builder.SetInsertPoint(ReplacedInst);
-      Value *NewVal = getValue(Cand.Mapping.RHS, ReplacedInst, EBC, DT,
-                               Builder, F->getParent());
       if (!NewVal) {
         if (DebugSouperPass)
           errs() << "\"\n; replacement failed\n";
@@ -359,6 +375,10 @@ public:
       }
       ++Opts;
       if (DebugSouperPass) {
+        errs() << "\"\n; with \"";
+        NewVal->print(errs());
+        errs() << "\" in:\n";
+        PrintReplacement(errs(), Cand.BPCs, Cand.PCs, Cand.Mapping);
         errs() << "\"\n; with \"";
         NewVal->print(errs());
         errs() << "\"\n";
@@ -407,6 +427,8 @@ void initializeSouperPassPass(llvm::PassRegistry &);
 INITIALIZE_PASS_BEGIN(SouperPass, "souper", "Souper super-optimizer pass",
                       false, false)
 INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
+INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(DemandedBitsWrapperPass)
 INITIALIZE_PASS_END(SouperPass, "souper", "Souper super-optimizer pass", false,
                     false)
