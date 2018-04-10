@@ -354,6 +354,8 @@ const char *Inst::getKindName(Kind K) {
     return "ashrexact";
   case Select:
     return "select";
+  case GEP:
+    return "getelementptr";
   case ZExt:
     return "zext";
   case SExt:

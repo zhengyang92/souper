@@ -70,8 +70,9 @@ struct BlockPCPhiPath {
 
 struct ExprBuilder {
   ExprBuilder(std::vector<std::unique_ptr<Array>> &Arrays,
-              std::vector<Inst *> &ArrayVars)
-      : Arrays(Arrays), ArrayVars(ArrayVars), IsForBlockPCUBInst(false) {}
+              std::vector<Inst *> &ArrayVars, DataLayout &DL)
+    : Arrays(Arrays), ArrayVars(ArrayVars), IsForBlockPCUBInst(false), DL(DL) {}
+  const DataLayout &DL;
 
   std::map<Block *, std::vector<ref<Expr>>> BlockPredMap;
   std::map<Inst *, ref<Expr>> ExprMap;
@@ -426,6 +427,40 @@ ref<Expr> ExprBuilder::build(Inst *I) {
     ref<Expr> Sub = SubExpr::create(get(Ops[0]), get(Ops[1]));
     recordUBInstruction(I, AndExpr::create(subnswUB(I), subnuwUB(I)));
     return Sub;
+  }
+
+  case Inst::GEP: {
+    ref<Expr> Gep = get(Ops[0]);
+    //    recordUBInstruction(I, AndExpr::create(subnswUB(I), subnuwUB(I)));
+    //    return Sub;
+    
+    unsigned PSize = DL.getPointerSizeInBits();
+    auto i = Ops.begin();
+    i ++;
+    for (; i != Ops.end(); i++) {
+ 
+      if (StructType *ST = i->getStructTypeOrNull()) {
+        const StructLayout *SL = DL.getStructLayout(ST);
+        ConstantInt *CI = cast<ConstantInt>(i.getOperand());
+        uint64_t Addend = SL->getElementOffset((unsigned) CI->getZExtValue());
+        if (Addend != 0) {
+          Gep = AddExpr::create(Gep, klee::ConstantExpr::create(Addend, PSize));
+        }
+      } else {
+        SequentialType *SET = cast<SequentialType>(i.getIndexedType());
+        uint64_t ElementSize =
+          DL.getTypeStoreSize(SET->getElementType());
+        Value *Operand = i.getOperand();
+        ref<Expr> *Index = get(Operand);
+        if (PSize > Index->getWidth())
+          Index = SExtExpr(Index , PSize);
+        ref<Expr> *Addend = MulExpr::create(Index,
+                                            klee::ConstExpr::create(ElementSize, PSize));
+        
+        Gep = AddExpr::create(Ptr, Addend);
+      }
+    }
+    return Gep;
   }
   case Inst::Mul:
     return buildAssoc(MulExpr::create, Ops);

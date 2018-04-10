@@ -219,6 +219,7 @@ Inst *ExprBuilder::buildGEP(Inst *Ptr, gep_type_iterator begin,
 }
 
 Inst *ExprBuilder::build(Value *V) {
+  V->dump();
   if (auto C = dyn_cast<Constant>(V)) {
     return buildConstant(C);
   } else if (auto ICI = dyn_cast<ICmpInst>(V)) {
@@ -382,12 +383,20 @@ Inst *ExprBuilder::build(Value *V) {
       ; // fallthrough to return below
     }
   } else if (auto GEP = dyn_cast<GetElementPtrInst>(V)) {
+    V->dump();
     if (isa<VectorType>(GEP->getType()))
       return makeArrayRead(V); // vector operation
     // TODO: replace with a GEP instruction
     //return buildGEP(get(GEP->getOperand(0)), gep_type_begin(GEP),
     //                gep_type_end(GEP));
-    return makeArrayRead(V);
+    std::vector<Inst*> Ops;
+    Ops.emplace_back(get(GEP->getOperand(0)));
+    for (auto i = gep_type_begin(GEP); i != gep_type_end(GEP); i ++) {
+      i.getOperand()->dump();
+      Ops.emplace_back(get(i.getOperand()));
+    }
+    return IC.getInst(Inst::GEP, DL.getPointerSizeInBits(), Ops);
+    //    return makeArrayRead(V);
   } else if (auto Phi = dyn_cast<PHINode>(V)) {
     // We can't look through phi nodes in loop headers because we might
     // encounter a previous iteration of an instruction and get a wrong result.
@@ -506,6 +515,7 @@ Inst *ExprBuilder::build(Value *V) {
 
 Inst *ExprBuilder::get(Value *V) {
   // Cache V if V is not found in InstMap
+  V->dump();
   Inst *&E = EBC.InstMap[V];
   if (!E) {
     E = build(V);
@@ -739,8 +749,12 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
   for (auto &BB : F) {
     std::unique_ptr<BlockCandidateSet> BCS(new BlockCandidateSet);
     for (auto &I : BB) {
-      if (I.getType()->isIntegerTy())
-        BCS->Replacements.emplace_back(&I, InstMapping(EB.get(&I), 0));
+      if (I.getType()->isIntegerTy() || I.getType()->isPointerTy())
+        {
+          BCS->Replacements.emplace_back(&I, InstMapping(EB.get(&I), 0));
+          ReplacementContext RC;
+          RC.printInst(EB.get(&I), llvm::outs(), true);
+        }
     }
     if (!BCS->Replacements.empty()) {
       std::unordered_set<Block *> VisitedBlocks;

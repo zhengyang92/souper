@@ -100,6 +100,7 @@ struct Inst : llvm::FoldingSetNode {
     SMulO,
     UMulWithOverflow,
     UMulO,
+    GEP,
 
     None,
 } Kind;
