@@ -101,6 +101,7 @@ struct ExprBuilder {
   Inst *makeArrayRead(Value *V);
   Inst *buildConstant(Constant *c);
   Inst *buildGEP(Inst *Ptr, gep_type_iterator begin, gep_type_iterator end);
+  Inst *buildGEP2(GetElementPtrInst *V);
   Inst *build(Value *V);
   void addPC(BasicBlock *BB, BasicBlock *Pred, std::vector<InstMapping> &PCs);
   void addPathConditions(BlockPCs &BPCs, std::vector<InstMapping> &PCs,
@@ -216,6 +217,19 @@ Inst *ExprBuilder::buildGEP(Inst *Ptr, gep_type_iterator begin,
     }
   }
   return Ptr;
+}
+
+Inst *ExprBuilder::buildGEP2(GetElementPtrInst *V) {
+  std::vector<Inst*> Ops;
+  Ops.emplace_back(get(V->getOperand(0)));
+  for (auto i = gep_type_begin(V); i != gep_type_end(V); i ++) {
+    i.getOperand()->dump();
+    Ops.emplace_back(get(i.getOperand()));
+  }
+  Inst *I = IC.getInst(Inst::GEP, DL.getPointerSizeInBits(), Ops);
+  I->GetElementPtrBaseType = V->getSourceElementType();
+  I->GetElementPtrBaseType->dump();
+  return I;
 }
 
 Inst *ExprBuilder::build(Value *V) {
@@ -389,13 +403,7 @@ Inst *ExprBuilder::build(Value *V) {
     // TODO: replace with a GEP instruction
     //return buildGEP(get(GEP->getOperand(0)), gep_type_begin(GEP),
     //                gep_type_end(GEP));
-    std::vector<Inst*> Ops;
-    Ops.emplace_back(get(GEP->getOperand(0)));
-    for (auto i = gep_type_begin(GEP); i != gep_type_end(GEP); i ++) {
-      i.getOperand()->dump();
-      Ops.emplace_back(get(i.getOperand()));
-    }
-    return IC.getInst(Inst::GEP, DL.getPointerSizeInBits(), Ops);
+    return buildGEP2(GEP);
     //    return makeArrayRead(V);
   } else if (auto Phi = dyn_cast<PHINode>(V)) {
     // We can't look through phi nodes in loop headers because we might

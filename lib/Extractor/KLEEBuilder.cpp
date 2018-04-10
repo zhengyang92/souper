@@ -70,9 +70,8 @@ struct BlockPCPhiPath {
 
 struct ExprBuilder {
   ExprBuilder(std::vector<std::unique_ptr<Array>> &Arrays,
-              std::vector<Inst *> &ArrayVars, DataLayout &DL)
-    : Arrays(Arrays), ArrayVars(ArrayVars), IsForBlockPCUBInst(false), DL(DL) {}
-  const DataLayout &DL;
+              std::vector<Inst *> &ArrayVars)
+    : Arrays(Arrays), ArrayVars(ArrayVars), IsForBlockPCUBInst(false) {}
 
   std::map<Block *, std::vector<ref<Expr>>> BlockPredMap;
   std::map<Inst *, ref<Expr>> ExprMap;
@@ -431,33 +430,25 @@ ref<Expr> ExprBuilder::build(Inst *I) {
 
   case Inst::GEP: {
     ref<Expr> Gep = get(Ops[0]);
-    //    recordUBInstruction(I, AndExpr::create(subnswUB(I), subnuwUB(I)));
-    //    return Sub;
-    
-    unsigned PSize = DL.getPointerSizeInBits();
+    Type *Ty = Ops[0]->GetElementPtrBaseType;
+    unsigned Width = Ops[0]->Width;
     auto i = Ops.begin();
     i ++;
     for (; i != Ops.end(); i++) {
- 
-      if (StructType *ST = i->getStructTypeOrNull()) {
-        const StructLayout *SL = DL.getStructLayout(ST);
-        ConstantInt *CI = cast<ConstantInt>(i.getOperand());
-        uint64_t Addend = SL->getElementOffset((unsigned) CI->getZExtValue());
+      if (StructType *ST = dyn_cast<StructType>(Ty)) {
+        uint64_t Addend = (*i)->Val.getZExtValue();
         if (Addend != 0) {
-          Gep = AddExpr::create(Gep, klee::ConstantExpr::create(Addend, PSize));
+          Gep = AddExpr::create(Gep, klee::ConstantExpr::create(Addend, Width));
         }
+        Ty = ST->getTypeAtIndex((*i)->Val.getZExtValue());
       } else {
-        SequentialType *SET = cast<SequentialType>(i.getIndexedType());
-        uint64_t ElementSize =
-          DL.getTypeStoreSize(SET->getElementType());
-        Value *Operand = i.getOperand();
-        ref<Expr> *Index = get(Operand);
-        if (PSize > Index->getWidth())
-          Index = SExtExpr(Index , PSize);
-        ref<Expr> *Addend = MulExpr::create(Index,
-                                            klee::ConstExpr::create(ElementSize, PSize));
+        SequentialType *SET = cast<SequentialType>(Ty);
+        uint64_t ElementSize = SET->getNumElements();
+        ref<Expr> R = SExtExpr::create(get(*i), Width);
+        ref<Expr> Addend = MulExpr::create(R,
+                                           klee::ConstantExpr::create(ElementSize, Width));
         
-        Gep = AddExpr::create(Ptr, Addend);
+        Gep = AddExpr::create(Gep, Addend);
       }
     }
     return Gep;

@@ -18,6 +18,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/IR/Type.h"
 #include <map>
 #include <memory>
 #include <set>
@@ -138,6 +139,7 @@ struct Inst : llvm::FoldingSetNode {
   bool Negative;
   unsigned NumSignBits;
   llvm::APInt DemandedBits;
+  llvm::Type* GetElementPtrBaseType;
 };
 
 /// A mapping from an Inst to a replacement. This may either represent a
