@@ -100,8 +100,7 @@ struct ExprBuilder {
   bool isLoopEntryPoint(PHINode *Phi);
   Inst *makeArrayRead(Value *V);
   Inst *buildConstant(Constant *c);
-  Inst *buildGEP(Inst *Ptr, gep_type_iterator begin, gep_type_iterator end);
-  Inst *buildGEP2(GetElementPtrInst *V);
+  Inst *buildGEP(GetElementPtrInst *V);
   Inst *build(Value *V);
   void addPC(BasicBlock *BB, BasicBlock *Pred, std::vector<InstMapping> &PCs);
   void addPathConditions(BlockPCs &BPCs, std::vector<InstMapping> &PCs,
@@ -191,49 +190,42 @@ Inst *ExprBuilder::buildConstant(Constant *c) {
   }
 }
 
-Inst *ExprBuilder::buildGEP(Inst *Ptr, gep_type_iterator begin,
-                            gep_type_iterator end) {
+Inst *ExprBuilder::buildGEP(GetElementPtrInst *GEP) {
   unsigned PSize = DL.getPointerSizeInBits();
-  for (auto i = begin; i != end; ++i) {
-    if (StructType *ST = i.getStructTypeOrNull()) {
+  uint64_t BaseTypeSize = DL.getTypeStoreSize(GEP->getSourceElementType());
+  Inst *Ptr = get(GEP->getOperand(0));
+  Inst *Offset =
+    IC.getInst(Inst::Mul, PSize,
+               {get(GEP->getOperand(1)), IC.getConst(APInt(PSize, BaseTypeSize))});
+  auto opi = GEP->op_begin() + 2;
+  for (auto tyi = gep_type_begin(GEP);
+       tyi != gep_type_end(GEP), opi != GEP->op_end(); ++tyi, ++opi) {
+    if (StructType *ST = tyi.getStructTypeOrNull()) {
       const StructLayout *SL = DL.getStructLayout(ST);
-      ConstantInt *CI = cast<ConstantInt>(i.getOperand());
+      ConstantInt *CI = cast<ConstantInt>(*opi);
       uint64_t Addend = SL->getElementOffset((unsigned) CI->getZExtValue());
       if (Addend != 0) {
-        Ptr = IC.getInst(Inst::Add, PSize,
-                         {Ptr, IC.getConst(APInt(PSize, Addend))});
+        Offset = IC.getInst(Inst::Add, PSize,
+                            {Offset, IC.getConst(APInt(PSize, Addend))});
       }
-    } else {
-      SequentialType *SET = cast<SequentialType>(i.getIndexedType());
-      uint64_t ElementSize =
-        DL.getTypeStoreSize(SET->getElementType());
-      Value *Operand = i.getOperand();
+    } else if (SequentialType *SET = dyn_cast<SequentialType>(tyi.getIndexedType())) {
+      uint64_t ElementSize = DL.getTypeStoreSize(SET->getElementType());
+      Value *Operand = *opi;
+      if(Operand == nullptr) break;
       Inst *Index = get(Operand);
       if (PSize > Index->Width)
         Index = IC.getInst(Inst::SExt, PSize, {Index});
-      Inst *Addend = IC.getInst(
-          Inst::Mul, PSize, {Index, IC.getConst(APInt(PSize, ElementSize))});
-      Ptr = IC.getInst(Inst::Add, PSize, {Ptr, Addend});
+      Inst *Addend = IC.getInst(Inst::Mul, PSize,
+                                {Index, IC.getConst(APInt(PSize, ElementSize))});
+      Offset = IC.getInst(Inst::Add, PSize, {Offset, Addend});
+    } else {
+      llvm_unreachable("Type iterator reached end");
     }
   }
-  return Ptr;
-}
-
-Inst *ExprBuilder::buildGEP2(GetElementPtrInst *V) {
-  std::vector<Inst*> Ops;
-  Ops.emplace_back(get(V->getOperand(0)));
-  for (auto i = gep_type_begin(V); i != gep_type_end(V); i ++) {
-    i.getOperand()->dump();
-    Ops.emplace_back(get(i.getOperand()));
-  }
-  Inst *I = IC.getInst(Inst::GEP, DL.getPointerSizeInBits(), Ops);
-  I->GetElementPtrBaseType = V->getSourceElementType();
-  I->GetElementPtrBaseType->dump();
-  return I;
+  return IC.getInst(Inst::GEP, DL.getPointerSizeInBits(), {Ptr, Offset});
 }
 
 Inst *ExprBuilder::build(Value *V) {
-  V->dump();
   if (auto C = dyn_cast<Constant>(V)) {
     return buildConstant(C);
   } else if (auto ICI = dyn_cast<ICmpInst>(V)) {
@@ -397,14 +389,9 @@ Inst *ExprBuilder::build(Value *V) {
       ; // fallthrough to return below
     }
   } else if (auto GEP = dyn_cast<GetElementPtrInst>(V)) {
-    V->dump();
     if (isa<VectorType>(GEP->getType()))
       return makeArrayRead(V); // vector operation
-    // TODO: replace with a GEP instruction
-    //return buildGEP(get(GEP->getOperand(0)), gep_type_begin(GEP),
-    //                gep_type_end(GEP));
-    return buildGEP2(GEP);
-    //    return makeArrayRead(V);
+    return buildGEP(GEP);
   } else if (auto Phi = dyn_cast<PHINode>(V)) {
     // We can't look through phi nodes in loop headers because we might
     // encounter a previous iteration of an instruction and get a wrong result.
@@ -523,7 +510,6 @@ Inst *ExprBuilder::build(Value *V) {
 
 Inst *ExprBuilder::get(Value *V) {
   // Cache V if V is not found in InstMap
-  V->dump();
   Inst *&E = EBC.InstMap[V];
   if (!E) {
     E = build(V);

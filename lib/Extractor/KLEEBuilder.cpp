@@ -427,30 +427,8 @@ ref<Expr> ExprBuilder::build(Inst *I) {
     recordUBInstruction(I, AndExpr::create(subnswUB(I), subnuwUB(I)));
     return Sub;
   }
-
   case Inst::GEP: {
-    ref<Expr> Gep = get(Ops[0]);
-    Type *Ty = Ops[0]->GetElementPtrBaseType;
-    unsigned Width = Ops[0]->Width;
-    auto i = Ops.begin();
-    i ++;
-    for (; i != Ops.end(); i++) {
-      if (StructType *ST = dyn_cast<StructType>(Ty)) {
-        uint64_t Addend = (*i)->Val.getZExtValue();
-        if (Addend != 0) {
-          Gep = AddExpr::create(Gep, klee::ConstantExpr::create(Addend, Width));
-        }
-        Ty = ST->getTypeAtIndex((*i)->Val.getZExtValue());
-      } else {
-        SequentialType *SET = cast<SequentialType>(Ty);
-        uint64_t ElementSize = SET->getNumElements();
-        ref<Expr> R = SExtExpr::create(get(*i), Width);
-        ref<Expr> Addend = MulExpr::create(R,
-                                           klee::ConstantExpr::create(ElementSize, Width));
-        
-        Gep = AddExpr::create(Gep, Addend);
-      }
-    }
+    ref<Expr> Gep = AddExpr::create(get(Ops[0]), get(Ops[1]));
     return Gep;
   }
   case Inst::Mul:
