@@ -36,7 +36,7 @@ llvm_installdir=$(pwd)/$llvmdir/$llvm_build_type
 llvm_builddir=$(pwd)/$llvmdir/${llvm_build_type}-build
 
 #svn co https://llvm.org/svn/llvm-project/llvm/${llvm_branch} $llvmdir
-git clone https://github.com/zhengyangl/llvm-7-instcombine $llvmdir
+git clone git@github.com:zhengyangl/llvm-7-instcombine $llvmdir
 svn co https://llvm.org/svn/llvm-project/cfe/${llvm_branch} $llvmdir/tools/clang
 svn co https://llvm.org/svn/llvm-project/compiler-rt/${llvm_branch} $llvmdir/projects/compiler-rt
 # Disable the broken select -> logic optimizations
