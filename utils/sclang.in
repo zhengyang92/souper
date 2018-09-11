@@ -221,6 +221,10 @@ if ($souper) {
     if (exists $ENV{"SOUPER_HARVEST_DEMANDED_BITS"}) {
         push @ARGV, ("-mllvm", "-souper-harvest-demanded-bits");
     }
+    if (exists $ENV{"LLVM_DISABLE_INSTCOMBINE"}) {
+        push @ARGV, ("-mllvm", "-disable-instruction-combiner");
+    }
+
 }
 
 if ((exists $ENV{"SOUPER_DYNAMIC_PROFILE"} ||
