@@ -14,11 +14,12 @@
 
 #include "souper/Extractor/Candidates.h"
 
-#include "klee/Expr.h"
-#include "klee/util/Ref.h"
 #include "llvm/ADT/EquivalenceClasses.h"
+#include "llvm/Analysis/LazyValueInfo.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/Instructions.h"
@@ -48,8 +49,12 @@ static llvm::cl::opt<bool> HarvestDataFlowFacts(
     llvm::cl::init(true));
 static llvm::cl::opt<bool> HarvestDemandedBits(
     "souper-harvest-demanded-bits",
-    llvm::cl::desc("Perform demanded bits analysis (default=false)"),
-    llvm::cl::init(false));
+    llvm::cl::desc("Perform demanded bits analysis (default=true)"),
+    llvm::cl::init(true));
+static llvm::cl::opt<bool> HarvestConstantRange(
+    "souper-harvest-const-range",
+    llvm::cl::desc("Perform range analysis (default=true)"),
+    llvm::cl::init(true));
 static llvm::cl::opt<bool> PrintNegAtReturn(
     "print-neg-at-return",
     llvm::cl::desc("Print negative dfa in each value returned from a function (default=false)"),
@@ -75,26 +80,19 @@ static llvm::cl::opt<bool> PrintSignBitsAtReturn(
     llvm::cl::desc("Print sign bits dfa in each value returned from a function (default=false)"),
     llvm::cl::init(false));
 
-
 using namespace llvm;
-using namespace klee;
 using namespace souper;
 
-std::string InstOrigin::getFunctionName() const {
-  if (Inst) {
-    const Function *F = Inst->getParent()->getParent();
-    if (F->hasLocalLinkage()) {
-      return (F->getParent()->getModuleIdentifier() + ":" + F->getName()).str();
-    } else {
-      return F->getName();
-    }
-  }
-
-  return FunctionName;
-}
-
 void CandidateReplacement::printFunction(llvm::raw_ostream &Out) const {
-  Out << "; Function: " << Origin.getFunctionName() << '\n';
+  assert(Mapping.LHS->hasOrigin(Origin));
+  const Function *F = Origin->getParent()->getParent();
+  std::string N;
+  if (F->hasLocalLinkage()) {
+    N = (F->getParent()->getModuleIdentifier() + ":" + F->getName()).str();
+  } else {
+    N = F->getName();
+  }
+  Out << "; Function: " << N << '\n';
 }
 
 void CandidateReplacement::printLHS(llvm::raw_ostream &Out,
@@ -112,13 +110,18 @@ namespace {
 
 struct ExprBuilder {
   ExprBuilder(const ExprBuilderOptions &Opts, Module *M, const LoopInfo *LI,
-              DemandedBits *DB, InstContext &IC, ExprBuilderContext &EBC)
-      : Opts(Opts), DL(M->getDataLayout()), LI(LI), DB(DB), IC(IC), EBC(EBC) {}
+              DemandedBits *DB, LazyValueInfo *LVI, ScalarEvolution *SE,
+              TargetLibraryInfo * TLI, InstContext &IC,
+              ExprBuilderContext &EBC)
+    : Opts(Opts), DL(M->getDataLayout()), LI(LI), DB(DB), LVI(LVI), SE(SE), TLI(TLI), IC(IC), EBC(EBC) {}
 
   const ExprBuilderOptions &Opts;
   const DataLayout &DL;
   const LoopInfo *LI;
   DemandedBits *DB;
+  LazyValueInfo *LVI;
+  ScalarEvolution *SE;
+  TargetLibraryInfo *TLI;
   InstContext &IC;
   ExprBuilderContext &EBC;
 
@@ -130,12 +133,15 @@ struct ExprBuilder {
   Inst *makeArrayRead(Value *V);
   Inst *buildConstant(Constant *c);
   Inst *buildGEP(Inst *Ptr, gep_type_iterator begin, gep_type_iterator end);
-  Inst *build(Value *V);
+  Inst *build(Value *V, APInt DemandedBits);
+  Inst *buildHelper(Value *V);
   void addPC(BasicBlock *BB, BasicBlock *Pred, std::vector<InstMapping> &PCs);
   void addPathConditions(BlockPCs &BPCs, std::vector<InstMapping> &PCs,
                          std::unordered_set<Block *> &VisitedBlocks,
                          BasicBlock *BB);
+  Inst *get(Value *V, APInt DemandedBits);
   Inst *get(Value *V);
+  void markExternalUses(Inst *I);
 };
 
 }
@@ -201,7 +207,24 @@ Inst *ExprBuilder::makeArrayRead(Value *V) {
       Negative = isKnownNegative(V, DL);
       NumSignBits = ComputeNumSignBits(V, DL);
     }
-  return IC.createVar(Width, Name, Known.Zero, Known.One, NonZero, NonNegative,
+
+    ConstantRange Range = llvm::ConstantRange(Width, /*isFullSet=*/true);
+    if (HarvestConstantRange && V->getType()->isIntegerTy()) {
+      if (Instruction *I = dyn_cast<Instruction>(V)) {
+        // TODO: Find out a better way to get the current basic block
+        // with this approach, we might be restricting the constant
+        // range harvesting. Because range info. might be coming from
+        // llvm values other than instruction.
+        BasicBlock *BB = I->getParent();
+        auto LVIRange = LVI->getConstantRange(V, BB);
+        auto SC = SE->getSCEV(V);
+        auto R1 = LVIRange.intersectWith(SE->getSignedRange(SC));
+        auto R2 = LVIRange.intersectWith(SE->getUnsignedRange(SC));
+        Range = R1.getSetSize().ult(R2.getSetSize()) ? R1 : R2;
+      }
+    }
+
+  return IC.createVar(Width, Name, Range, Known.Zero, Known.One, NonZero, NonNegative,
                       PowOfTwo, Negative, NumSignBits);
 }
 
@@ -247,7 +270,42 @@ Inst *ExprBuilder::buildGEP(Inst *Ptr, gep_type_iterator begin,
   return Ptr;
 }
 
-Inst *ExprBuilder::build(Value *V) {
+void ExprBuilder::markExternalUses (Inst *I) {
+  std::map<Inst *, unsigned> UsesCount;
+  std::unordered_set<Inst *> Visited;
+  std::vector<Inst *> Stack;
+  Stack.push_back(I);
+  while(!Stack.empty()) {
+    Inst* T = Stack.back();
+    Stack.pop_back();
+    for (auto Op: T->Ops) {
+      if (Op->K != Inst::Const && Op->K != Inst::Var
+          && Op->K != Inst::UntypedConst && Op->K != Inst::Phi) {
+
+        if (UsesCount.find(Op) == UsesCount.end())
+          UsesCount[Op] = 1;
+        else
+          UsesCount[Op]++;
+
+        if (Visited.insert(Op).second) {
+          Stack.push_back(Op);
+        }
+      }
+    }
+  }
+  for (auto U : UsesCount)
+    for (auto R : EBC.InstMap)
+      if (R.second == U.first && R.first->getNumUses() != U.second)
+        I->DepsWithExternalUses.insert(U.first);
+}
+
+Inst *ExprBuilder::build(Value *V, APInt DemandedBits) {
+  Inst *I = buildHelper(V);
+  I->DemandedBits = DemandedBits;
+  return I;
+}
+
+Inst *ExprBuilder::buildHelper(Value *V) {
   if (auto C = dyn_cast<Constant>(V)) {
     return buildConstant(C);
   } else if (auto ICI = dyn_cast<ICmpInst>(V)) {
@@ -461,6 +519,7 @@ Inst *ExprBuilder::build(Value *V) {
       }
     }
   } else if (auto Call = dyn_cast<CallInst>(V)) {
+    LibFunc Func;
     if (auto II = dyn_cast<IntrinsicInst>(Call)) {
       Inst *L = get(II->getOperand(0));
       switch (II->getIntrinsicID()) {
@@ -474,41 +533,64 @@ Inst *ExprBuilder::build(Value *V) {
           return IC.getInst(Inst::Cttz, L->Width, {L});
         case Intrinsic::ctlz:
           return IC.getInst(Inst::Ctlz, L->Width, {L});
+        case Intrinsic::fshl:
+        case Intrinsic::fshr: {
+          Inst *Low = get(II->getOperand(1));
+          Inst *ShAmt = get(II->getOperand(2));
+          Inst::Kind K =
+              II->getIntrinsicID() == Intrinsic::fshl ? Inst::FShl : Inst::FShr;
+          return IC.getInst(K, L->Width, {/*High=*/L, Low, ShAmt});
+        }
         case Intrinsic::sadd_with_overflow: {
           Inst *R = get(II->getOperand(1));
-          Inst *Add = IC.getInst(Inst::Add, L->Width, {L, R});
-          Inst *Overflow = IC.getInst(Inst::SAddO, 1, {L, R});
+          Inst *Add = IC.getInst(Inst::Add, L->Width, {L, R}, /*Available=*/false);
+          Inst *Overflow = IC.getInst(Inst::SAddO, 1, {L, R}, /*Available=*/false);
           return IC.getInst(Inst::SAddWithOverflow, L->Width+1, {Add, Overflow});
         }
         case Intrinsic::uadd_with_overflow: {
           Inst *R = get(II->getOperand(1));
-          Inst *Add = IC.getInst(Inst::Add, L->Width, {L, R});
-          Inst *Overflow = IC.getInst(Inst::UAddO, 1, {L, R});
+          Inst *Add = IC.getInst(Inst::Add, L->Width, {L, R}, /*Available=*/false);
+          Inst *Overflow = IC.getInst(Inst::UAddO, 1, {L, R}, /*Available=*/false);
           return IC.getInst(Inst::UAddWithOverflow, L->Width+1, {Add, Overflow});
         }
         case Intrinsic::ssub_with_overflow: {
           Inst *R = get(II->getOperand(1));
-          Inst *Sub = IC.getInst(Inst::Sub, L->Width, {L, R});
-          Inst *Overflow = IC.getInst(Inst::SSubO, 1, {L, R});
+          Inst *Sub = IC.getInst(Inst::Sub, L->Width, {L, R}, /*Available=*/false);
+          Inst *Overflow = IC.getInst(Inst::SSubO, 1, {L, R}, /*Available=*/false);
           return IC.getInst(Inst::SSubWithOverflow, L->Width+1, {Sub, Overflow});
         }
         case Intrinsic::usub_with_overflow: {
           Inst *R = get(II->getOperand(1));
-          Inst *Sub = IC.getInst(Inst::Sub, L->Width, {L, R});
-          Inst *Overflow = IC.getInst(Inst::USubO, 1, {L, R});
+          Inst *Sub = IC.getInst(Inst::Sub, L->Width, {L, R}, /*Available=*/false);
+          Inst *Overflow = IC.getInst(Inst::USubO, 1, {L, R}, /*Available=*/false);
           return IC.getInst(Inst::USubWithOverflow, L->Width+1, {Sub, Overflow});
         }
         case Intrinsic::smul_with_overflow: {
           Inst *R = get(II->getOperand(1));
-          Inst *Mul = IC.getInst(Inst::Mul, L->Width, {L, R});
-          Inst *Overflow = IC.getInst(Inst::SMulO, 1, {L, R});
+          Inst *Mul = IC.getInst(Inst::Mul, L->Width, {L, R}, /*Available=*/false);
+          Inst *Overflow = IC.getInst(Inst::SMulO, 1, {L, R}, /*Available=*/false);
           return IC.getInst(Inst::SMulWithOverflow, L->Width+1, {Mul, Overflow});
         }
         case Intrinsic::umul_with_overflow: {
           Inst *R = get(II->getOperand(1));
-          Inst *Mul = IC.getInst(Inst::Mul, L->Width, {L, R});
-          Inst *Overflow = IC.getInst(Inst::UMulO, 1, {L, R});
+          Inst *Mul = IC.getInst(Inst::Mul, L->Width, {L, R}, /*Available=*/false);
+          Inst *Overflow = IC.getInst(Inst::UMulO, 1, {L, R}, /*Available=*/false);
           return IC.getInst(Inst::UMulWithOverflow, L->Width+1, {Mul, Overflow});
+        }
+      }
+    } else {
+      Function* F = Call->getCalledFunction();
+      if(F && TLI->getLibFunc(*F, Func) && TLI->has(Func)) {
+        switch (Func) {
+          case LibFunc_abs: {
+            Inst *A = get(Call->getOperand(0));
+            Inst *Z = IC.getConst(APInt(A->Width, 0));
+            Inst *NegA = IC.getInst(Inst::SubNSW, A->Width, {Z, A}, /*Available=*/false);
+            Inst *Cmp = IC.getInst(Inst::Slt, 1, {Z, A}, /*Available=*/false);
+            return IC.getInst(Inst::Select, A->Width, {Cmp, A, NegA});
+          }
+          default:
+            break;
         }
       }
     }
@@ -517,16 +599,26 @@ Inst *ExprBuilder::build(Value *V) {
   return makeArrayRead(V);
 }
 
+Inst *ExprBuilder::get(Value *V, APInt DemandedBits) {
+  // Cache V if V is not found in InstMap
+  Inst *&E = EBC.InstMap[V];
+  if (!E)
+    E = build(V, DemandedBits);
+  if (E->K != Inst::Const && !E->hasOrigin(V))
+    E->Origins.push_back(V);
+  return E;
+}
+
 Inst *ExprBuilder::get(Value *V) {
+  // Cache V if V is not found in InstMap
   Inst *&E = EBC.InstMap[V];
   if (!E) {
-    E = build(V);
+    unsigned Width = DL.getTypeSizeInBits(V->getType());
+    APInt DemandedBits = APInt::getAllOnesValue(Width);
+    E = build(V, DemandedBits);
   }
-  E->DemandedBits = APInt::getAllOnesValue(E->Width);
-  if (HarvestDemandedBits) {
-    if (Instruction *I = dyn_cast<Instruction>(V))
-      E->DemandedBits = DB->getDemandedBits(I);
-  }
+  if (E->K != Inst::Const && !E->hasOrigin(V))
+    E->Origins.push_back(V);
   return E;
 }
 
@@ -741,10 +833,12 @@ std::tuple<BlockPCs, std::vector<InstMapping>> GetRelevantPCs(
 }
 
 void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
+                           LazyValueInfo *LVI, ScalarEvolution *SE,
+                           TargetLibraryInfo *TLI,
                            const ExprBuilderOptions &Opts, InstContext &IC,
                            ExprBuilderContext &EBC,
                            FunctionCandidateSet &Result) {
-  ExprBuilder EB(Opts, F.getParent(), LI, DB, IC, EBC);
+  ExprBuilder EB(Opts, F.getParent(), LI, DB, LVI, SE, TLI, IC, EBC);
 
   for (auto &BB : F) {
     std::unique_ptr<BlockCandidateSet> BCS(new BlockCandidateSet);
@@ -807,9 +901,20 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
         else
           llvm::outs() << "known at return: " << "" << "\n";
       }
-      //NumSignBits = ComputeNumSignBits(V, DL);
-      if (I.getType()->isIntegerTy())
-        BCS->Replacements.emplace_back(&I, InstMapping(EB.get(&I), 0));
+      if (!I.getType()->isIntegerTy())
+        continue;
+      if (I.hasNUses(0))
+        continue;
+      Inst *In;
+      if (HarvestDemandedBits) {
+        APInt DemandedBits = DB->getDemandedBits(&I);
+        In = EB.get(&I, DemandedBits);
+      } else {
+        In = EB.get(&I);
+      }
+      EB.markExternalUses(In);
+      BCS->Replacements.emplace_back(&I, InstMapping(In, 0));
+      assert(EB.get(&I)->hasOrigin(&I));
     }
     if (!BCS->Replacements.empty()) {
       std::unordered_set<Block *> VisitedBlocks;
@@ -820,7 +925,7 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
       auto BPCSets = AddBlockPCSets(BCS->BPCs, BPCVars);
 
       for (auto &R : BCS->Replacements) {
-        std::tie(R.BPCs, R.PCs) = 
+        std::tie(R.BPCs, R.PCs) =
           GetRelevantPCs(BCS->BPCs, BCS->PCs, BPCSets, PCSets, Vars, R.Mapping);
       }
 
@@ -845,17 +950,27 @@ public:
   void getAnalysisUsage(AnalysisUsage &Info) const {
     Info.addRequired<LoopInfoWrapperPass>();
     Info.addRequired<DemandedBitsWrapperPass>();
+    Info.addRequired<TargetLibraryInfoWrapperPass>();
+    Info.addRequired<LazyValueInfoWrapperPass>();
+    Info.addRequired<ScalarEvolutionWrapperPass>();
     Info.setPreservesAll();
   }
 
   bool runOnFunction(Function &F) {
+    TargetLibraryInfo* TLI = &getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
     LoopInfo *LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
     if (!LI)
       report_fatal_error("getLoopInfo() failed");
     DemandedBits *DB = &getAnalysis<DemandedBitsWrapperPass>().getDemandedBits();
     if (!DB)
       report_fatal_error("getDemandedBits() failed");
-    ExtractExprCandidates(F, LI, DB, Opts, IC, EBC, Result);
+    LazyValueInfo *LVI = &getAnalysis<LazyValueInfoWrapperPass>().getLVI();
+    if (!LVI)
+      report_fatal_error("getLVI() failed");
+    ScalarEvolution *SE = &getAnalysis<ScalarEvolutionWrapperPass>().getSE();
+    if (!SE)
+      report_fatal_error("getSE() failed");
+    ExtractExprCandidates(F, LI, DB, LVI, SE, TLI, Opts, IC, EBC, Result);
     return false;
   }
 };
@@ -865,10 +980,11 @@ char ExtractExprCandidatesPass::ID = 0;
 }
 
 FunctionCandidateSet souper::ExtractCandidatesFromPass(
-    Function *F, const LoopInfo *LI, DemandedBits *DB, InstContext &IC,
+    Function *F, const LoopInfo *LI, DemandedBits *DB, LazyValueInfo *LVI,
+    ScalarEvolution *SE, TargetLibraryInfo *TLI, InstContext &IC,
     ExprBuilderContext &EBC, const ExprBuilderOptions &Opts) {
   FunctionCandidateSet Result;
-  ExtractExprCandidates(*F, LI, DB, Opts, IC, EBC, Result);
+  ExtractExprCandidates(*F, LI, DB, LVI, SE, TLI, Opts, IC, EBC, Result);
   return Result;
 }
 

@@ -75,7 +75,7 @@ bool SolveCandidateMap(llvm::raw_ostream &OS, CandidateMap &M,
       if (KVForStaticProfile) {
         std::string Str;
         llvm::raw_string_ostream Loc(Str);
-        Instruction *I = Cand.Origin.getInstruction();
+        Instruction *I = Cand.Origin;
         I->getDebugLoc().print(Loc);
         std::string HField = "sprofile " + Loc.str();
         ReplacementContext Context;
@@ -83,7 +83,7 @@ bool SolveCandidateMap(llvm::raw_ostream &OS, CandidateMap &M,
             Cand.PCs, Cand.Mapping.LHS, Context), HField, 1);
       }
 
-      Inst *RHS;
+      Inst *RHS = 0;
       if (std::error_code EC =
               S->infer(Cand.BPCs, Cand.PCs, Cand.Mapping.LHS, RHS, IC)) {
         llvm::errs() << "Unable to query solver: " << EC.message() << '\n';
@@ -121,7 +121,7 @@ bool CheckCandidateMap(llvm::Module &Mod, CandidateMap &M, Solver *S,
 
   bool OK = true;
   for (auto &Cand : M) {
-    Inst *RHS;
+    Inst *RHS = 0;
     if (std::error_code EC =
             S->infer(Cand.BPCs, Cand.PCs, Cand.Mapping.LHS, RHS, IC)) {
       llvm::errs() << "Unable to query solver: " << EC.message() << '\n';
@@ -139,7 +139,7 @@ bool CheckCandidateMap(llvm::Module &Mod, CandidateMap &M, Solver *S,
       }
       llvm::APInt ActualVal = Cand.Mapping.RHS->Val;
 
-      llvm::Instruction *Inst = Cand.Origin.getInstruction();
+      llvm::Instruction *Inst = Cand.Origin;
       llvm::MDNode *ExpectedMD = Inst->getMetadata(ExpectedID);
       if (!ExpectedMD) {
         llvm::errs() << "instruction:\n";
@@ -151,6 +151,7 @@ bool CheckCandidateMap(llvm::Module &Mod, CandidateMap &M, Solver *S,
         OK = false;
         continue;
       }
+
       if (ExpectedMD->getNumOperands() != 1 ||
           !mdconst::hasa<ConstantInt>(ExpectedMD->getOperand(0))) {
         llvm::errs() << "instruction:\n";

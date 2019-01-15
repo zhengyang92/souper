@@ -17,6 +17,9 @@
 
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Analysis/DemandedBits.h"
+#include "llvm/Analysis/LazyValueInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Support/raw_ostream.h"
 #include "souper/Inst/Inst.h"
 #include <map>
@@ -35,27 +38,12 @@ class Value;
 
 namespace souper {
 
-struct InstOrigin {
-  InstOrigin(llvm::Instruction *Inst) : Inst(Inst) {}
-  InstOrigin(llvm::StringRef FunctionName)
-      : Inst(0), FunctionName(FunctionName) {}
-
-  llvm::Instruction *getInstruction() const {
-    return Inst;
-  }
-  std::string getFunctionName() const;
-
-private:
-  llvm::Instruction *Inst;
-  std::string FunctionName;
-};
-
 struct CandidateReplacement {
-  CandidateReplacement(InstOrigin Origin, InstMapping Mapping)
-      : Origin(Origin), Mapping(Mapping) {}
+  CandidateReplacement(llvm::Instruction *Origin, InstMapping Mapping)
+  : Origin(Origin), Mapping(Mapping) {}
 
   /// The instruction from which the candidate was derived.
-  InstOrigin Origin;
+  llvm::Instruction *Origin;
 
   /// The replacement mapping.
   InstMapping Mapping;
@@ -76,8 +64,6 @@ struct CandidateReplacement {
 };
 
 struct BlockCandidateSet {
-  llvm::BasicBlock *Origin;
-
   std::vector<InstMapping> PCs;
   BlockPCs BPCs;
   std::vector<CandidateReplacement> Replacements;
@@ -115,7 +101,8 @@ struct ExprBuilderContext {
 
 FunctionCandidateSet ExtractCandidatesFromPass(
     llvm::Function *F, const llvm::LoopInfo *LI, llvm::DemandedBits *DB,
-    InstContext &IC, ExprBuilderContext &EBC,
+    llvm::LazyValueInfo *LVI, llvm::ScalarEvolution *SE,
+    llvm::TargetLibraryInfo *TLI, InstContext &IC, ExprBuilderContext &EBC,
     const ExprBuilderOptions &Opts = ExprBuilderOptions());
 
 FunctionCandidateSet ExtractCandidates(

@@ -63,6 +63,10 @@ static cl::opt<bool> InferRHS("infer-rhs",
     cl::desc("Try to infer a RHS for a Souper LHS (default=false)"),
     cl::init(false));
 
+static cl::opt<bool> ReInferRHS("reinfer-rhs",
+    cl::desc("Try to infer a new RHS and compare its cost with the existing RHS (default=false)"),
+    cl::init(false));
+
 static cl::opt<bool> ParseOnly("parse-only",
     cl::desc("Only parse the replacement, don't call isValid() (default=false)"),
     cl::init(false));
@@ -75,13 +79,13 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
   InstContext IC;
   std::string ErrStr;
 
-  ParsedReplacement Rep;
-  ReplacementContext Context;
+  std::vector<ParsedReplacement> Reps;
+  std::vector<ReplacementContext> Contexts;
   if (InferRHS || ParseLHSOnly) {
-    Rep = ParseReplacementLHS(IC, MB.getBufferIdentifier(), MB.getBuffer(),
-                              Context, ErrStr);
+    Reps = ParseReplacementLHSs(IC, MB.getBufferIdentifier(), MB.getBuffer(),
+                                Contexts, ErrStr);
   } else {
-    Rep = ParseReplacement(IC, MB.getBufferIdentifier(), MB.getBuffer(), ErrStr);
+    Reps = ParseReplacements(IC, MB.getBufferIdentifier(), MB.getBuffer(), ErrStr);
   }
   if (!ErrStr.empty()) {
     llvm::errs() << ErrStr << '\n';
@@ -93,155 +97,190 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
     return 0;
   }
 
-  if (InferNeg) {
-    APInt Negative;
-    if (std::error_code EC = S->Negative(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
-                                            Negative, IC)) {
-      llvm::errs() << EC.message() << '\n';
-    }
-    std::string s;
-    if (Negative == APInt::getNullValue(Rep.Mapping.LHS->Width))
-      s = "";
-    else
-      s = "(negative)";
-    llvm::outs() << "known from souper: " << s << "\n";
-    return 0;
-  }
-
-  if (InferNonNeg) {
-    APInt NonNegative;
-    if (std::error_code EC = S->nonNegative(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
-                                            NonNegative, IC)) {
-      llvm::errs() << EC.message() << '\n';
-    }
-    std::string s;
-    if (NonNegative == APInt::getNullValue(Rep.Mapping.LHS->Width))
-      s = "(nonNegative)";
-    else
-      s = "";
-    llvm::outs() << "known from souper: " << s << "\n";
-    return 0;
-  }
-
-  if (InferKnownBits) {
-    APInt Zeros, Ones;
-    if (std::error_code EC = S->knownBits(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
-                                          Zeros, Ones, IC)) {
-      llvm::errs() << EC.message() << '\n';
-    }
-    std::string s = Inst::getKnownBitsString(Zeros, Ones);
-    llvm::outs() << "known from souper: " << s << "\n";
-    return 0;
-  }
-
-  if (InferPowerTwo) {
-    APInt PowTwo;
-    if (std::error_code EC = S->powerTwo(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
-                                            PowTwo, IC)) {
-      llvm::errs() << EC.message() << '\n';
-    }
-    std::string s;
-    if (PowTwo.getBoolValue())
-      s = "(powerOfTwo)";
-    else
-      s = "";
-    llvm::outs() << "known from souper: " << s << "\n";
-    return 0;
-  }
-
-  if (InferNonZero) {
-    APInt NonZero;
-    if (std::error_code EC = S->nonZero(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
-                                            NonZero, IC)) {
-      llvm::errs() << EC.message() << '\n';
-    }
-    std::string s;
-    if (NonZero.getBoolValue())
-      s = "(nonZero)";
-    else
-      s = "";
-    llvm::outs() << "known from souper: " << s << "\n";
-    return 0;
-  }
-
-  if (InferSignBits) {
-    unsigned SignBits;
-    if (std::error_code EC = S->signBits(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
-                                            SignBits, IC)) {
-      llvm::errs() << EC.message() << '\n';
-    }
-    std::string s;
-    if (SignBits > 1)
-      s = std::to_string(SignBits);
-    else
-      s = "";
-    llvm::outs() << "known from souper: " << s << "\n";
-    return 0;
-  }
-
-  if (InferRHS) {
-    if (std::error_code EC = S->infer(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
-                                      Rep.Mapping.RHS, IC)) {
-      llvm::errs() << EC.message() << '\n';
-      return 1;
-    }
-    if (Rep.Mapping.RHS) {
-      llvm::outs() << "; RHS inferred successfully\n";
-      if (PrintRepl) {
-        PrintReplacement(llvm::outs(), Rep.BPCs, Rep.PCs, Rep.Mapping);
-      } else if (PrintReplSplit) {
-        ReplacementContext Context;
-        PrintReplacementLHS(llvm::outs(), Rep.BPCs, Rep.PCs,
-                            Rep.Mapping.LHS, Context);
-        PrintReplacementRHS(llvm::outs(), Rep.Mapping.RHS, Context);
-      } else {
-        PrintReplacementRHS(llvm::outs(), Rep.Mapping.RHS, Context);
+  unsigned Index = 0;
+  int Ret = 0;
+  int Success = 0, Fail = 0, Error = 0;
+  for (auto Rep : Reps) {
+    if (InferNeg) {
+      APInt Negative;
+      if (std::error_code EC = S->Negative(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                              Negative, IC)) {
+        llvm::errs() << EC.message() << '\n';
       }
-    } else {
-      llvm::outs() << "; Failed to infer RHS\n";
-      if (PrintRepl || PrintReplSplit) {
-        ReplacementContext Context;
-        PrintReplacementLHS(llvm::outs(), Rep.BPCs, Rep.PCs,
-                            Rep.Mapping.LHS, Context);
-      }
+      std::string s;
+      if (Negative == APInt::getNullValue(Rep.Mapping.LHS->Width))
+        s = "";
+      else
+        s = "(negative)";
+      llvm::outs() << "known from souper: " << s << "\n";
+      return 0;
     }
-  } else {
-    bool Valid;
-    std::vector<std::pair<Inst *, APInt>> Models;
-    if (std::error_code EC = S->isValid(Rep.BPCs, Rep.PCs,
-                                        Rep.Mapping, Valid, &Models)) {
-      llvm::errs() << EC.message() << '\n';
-      return 1;
+  
+    if (InferNonNeg) {
+      APInt NonNegative;
+      if (std::error_code EC = S->nonNegative(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                              NonNegative, IC)) {
+        llvm::errs() << EC.message() << '\n';
+      }
+      std::string s;
+      if (NonNegative == APInt::getNullValue(Rep.Mapping.LHS->Width))
+        s = "(nonNegative)";
+      else
+        s = "";
+      llvm::outs() << "known from souper: " << s << "\n";
+      return 0;
+    }
+  
+    if (InferKnownBits) {
+      APInt Zeros, Ones;
+      if (std::error_code EC = S->knownBits(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                            Zeros, Ones, IC)) {
+        llvm::errs() << EC.message() << '\n';
+      }
+      std::string s = Inst::getKnownBitsString(Zeros, Ones);
+      llvm::outs() << "known from souper: " << s << "\n";
+      return 0;
+    }
+  
+    if (InferPowerTwo) {
+      APInt PowTwo;
+      if (std::error_code EC = S->powerTwo(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                              PowTwo, IC)) {
+        llvm::errs() << EC.message() << '\n';
+      }
+      std::string s;
+      if (PowTwo.getBoolValue())
+        s = "(powerOfTwo)";
+      else
+        s = "";
+      llvm::outs() << "known from souper: " << s << "\n";
+      return 0;
+    }
+  
+    if (InferNonZero) {
+      APInt NonZero;
+      if (std::error_code EC = S->nonZero(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                              NonZero, IC)) {
+        llvm::errs() << EC.message() << '\n';
+      }
+      std::string s;
+      if (NonZero.getBoolValue())
+        s = "(nonZero)";
+      else
+        s = "";
+      llvm::outs() << "known from souper: " << s << "\n";
+      return 0;
+    }
+  
+    if (InferSignBits) {
+      unsigned SignBits;
+      if (std::error_code EC = S->signBits(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                              SignBits, IC)) {
+        llvm::errs() << EC.message() << '\n';
+      }
+      std::string s;
+      if (SignBits > 1)
+        s = std::to_string(SignBits);
+      else
+        s = "";
+      llvm::outs() << "known from souper: " << s << "\n";
+      return 0;
     }
 
-    if (Valid) {
-      llvm::outs() << "; LGTM\n";
-      if (PrintRepl)
-        PrintReplacement(llvm::outs(), Rep.BPCs, Rep.PCs, Rep.Mapping);
-      if (PrintReplSplit) {
-        ReplacementContext Context;
-        PrintReplacementLHS(llvm::outs(), Rep.BPCs, Rep.PCs,
-                            Rep.Mapping.LHS, Context);
-        PrintReplacementRHS(llvm::outs(), Rep.Mapping.RHS, Context);
+    if (InferRHS || ReInferRHS) {
+      int OldCost;
+      if (ReInferRHS) {
+        OldCost = cost(Rep.Mapping.RHS);
+        Rep.Mapping.RHS = 0;
       }
-    } else {
-      llvm::outs() << "Invalid";
-      if (PrintCounterExample && !Models.empty()) {
-        llvm::outs() << ", e.g.\n\n";
-        std::sort(Models.begin(), Models.end(),
-                  [](const std::pair<Inst *, APInt> &A,
-                     const std::pair<Inst *, APInt> &B) {
-                    return A.first->Name < B.first->Name;
-                  });
-        for (const auto &M : Models) {
-          llvm::outs() << '%' << M.first->Name << " = " << M.second << '\n';
+      if (std::error_code EC = S->infer(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                        Rep.Mapping.RHS, IC)) {
+        llvm::errs() << EC.message() << '\n';
+        Ret = 1;
+        ++Error;
+      }
+      if (Rep.Mapping.RHS) {
+        ++Success;
+        if (ReInferRHS) {
+          int NewCost = cost(Rep.Mapping.RHS);
+          int LHSCost = cost(Rep.Mapping.LHS);
+          if (NewCost <= OldCost)
+            llvm::outs() << "; RHS inferred successfully, no cost regression";
+          else
+            llvm::outs() << "; RHS inferred successfully, but cost regressed";
+          llvm::outs() << " (Old= " << OldCost << ", New= " << NewCost <<
+            ", LHS= " << LHSCost << ")\n";
+        } else {
+          llvm::outs() << "; RHS inferred successfully\n";
+        }
+        if (PrintRepl) {
+          PrintReplacement(llvm::outs(), Rep.BPCs, Rep.PCs, Rep.Mapping);
+        } else if (PrintReplSplit) {
+          ReplacementContext Context;
+          PrintReplacementLHS(llvm::outs(), Rep.BPCs, Rep.PCs,
+                              Rep.Mapping.LHS, Context);
+          PrintReplacementRHS(llvm::outs(), Rep.Mapping.RHS, Context);
+        } else {
+          ReplacementContext Context;
+          PrintReplacementRHS(llvm::outs(), Rep.Mapping.RHS,
+                              ReInferRHS ? Context : Contexts[Index]);
         }
       } else {
-        llvm::outs() << "\n";
+        ++Fail;
+        llvm::outs() << "; Failed to infer RHS\n";
+        if (PrintRepl || PrintReplSplit) {
+          ReplacementContext Context;
+          PrintReplacementLHS(llvm::outs(), Rep.BPCs, Rep.PCs,
+                              Rep.Mapping.LHS, Context);
+        }
+      }
+    } else {
+      bool Valid;
+      std::vector<std::pair<Inst *, APInt>> Models;
+      if (std::error_code EC = S->isValid(IC, Rep.BPCs, Rep.PCs,
+                                          Rep.Mapping, Valid, &Models)) {
+        llvm::errs() << EC.message() << '\n';
+        Ret = 1;
+        ++Error;
+      }
+
+      if (Valid) {
+        ++Success;
+        llvm::outs() << "; LGTM\n";
+        if (PrintRepl)
+          PrintReplacement(llvm::outs(), Rep.BPCs, Rep.PCs, Rep.Mapping);
+        if (PrintReplSplit) {
+          ReplacementContext Context;
+          PrintReplacementLHS(llvm::outs(), Rep.BPCs, Rep.PCs,
+                              Rep.Mapping.LHS, Context);
+          PrintReplacementRHS(llvm::outs(), Rep.Mapping.RHS, Context);
+        }
+      } else {
+        ++Fail;
+        llvm::outs() << "Invalid";
+        if (PrintCounterExample && !Models.empty()) {
+          llvm::outs() << ", e.g.\n\n";
+          std::sort(Models.begin(), Models.end(),
+                    [](const std::pair<Inst *, APInt> &A,
+                       const std::pair<Inst *, APInt> &B) {
+                      return A.first->Name < B.first->Name;
+                    });
+          for (const auto &M : Models) {
+            llvm::outs() << '%' << M.first->Name << " = " << M.second << '\n';
+          }
+        } else {
+          llvm::outs() << "\n";
+        }
       }
     }
+    ++Index;
+    if (PrintRepl || PrintReplSplit)
+      llvm::outs() << "\n";
   }
-  return 0;
+  if ((Success + Fail + Error) > 1)
+    llvm::outs() << "successes = " << Success << ", failures = " << Fail <<
+      ", errors = " << Error << "\n";
+  return Ret;
 }
 
 int main(int argc, char **argv) {

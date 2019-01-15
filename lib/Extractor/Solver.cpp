@@ -15,16 +15,17 @@
 #define DEBUG_TYPE "souper"
 
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "souper/Extractor/Solver.h"
+#include "souper/Infer/ExhaustiveSynthesis.h"
 #include "souper/Infer/InstSynthesis.h"
 #include "souper/KVStore/KVStore.h"
 #include "souper/Parser/Parser.h"
 
-#include <sstream>
 #include <unordered_map>
 
 STATISTIC(MemHitsInfer, "Number of internal cache hits for infer()");
@@ -40,34 +41,33 @@ using namespace llvm;
 namespace {
 
 static cl::opt<bool> NoInfer("souper-no-infer",
-    cl::desc("Populate the external cache, but don't infer replacements"),
+    cl::desc("Populate the external cache, but don't infer replacements (default=false)"),
     cl::init(false));
 static cl::opt<bool> InferNop("souper-infer-nop",
     cl::desc("Infer that the output is the same as an input value (default=false)"),
     cl::init(false));
+static cl::opt<bool> StressNop("souper-stress-nop",
+    cl::desc("stress-test big queries in nop synthesis by always performing all of the small queries (slow!) (default=false)"),
+    cl::init(false));
+static cl::opt<int>MaxNops("souper-max-nops",
+    cl::desc("maximum number of values from the LHS to try to use as the RHS (default=20)"),
+    cl::init(20));
 static cl::opt<bool> InferInts("souper-infer-iN",
     cl::desc("Infer iN integers for N>1 (default=true)"),
     cl::init(true));
 static cl::opt<bool> InferInsts("souper-infer-inst",
     cl::desc("Infer instructions (default=false)"),
     cl::init(false));
+static cl::opt<bool> EnableExhaustiveSynthesis("souper-exhaustive-synthesis",
+    cl::desc("Use exaustive search for instruction synthesis (default=false)"),
+    cl::init(false));
 static cl::opt<int> MaxLHSSize("souper-max-lhs-size",
-    cl::desc("Max size of LHS (in bytes) to put in external cache"),
+    cl::desc("Max size of LHS (in bytes) to put in external cache (default=1024)"),
     cl::init(1024));
 
 class BaseSolver : public Solver {
   std::unique_ptr<SMTLIBSolver> SMTSolver;
   unsigned Timeout;
-
-  void findVars(Inst *I, std::set<Inst *> &Visited,
-                std::vector<Inst *> &Guesses, unsigned Width) {
-    if (!Visited.insert(I).second)
-      return;
-    if (I->K == Inst::Var && I->Width == Width)
-      Guesses.emplace_back(I);
-    for (auto Op : I->Ops)
-      findVars(Op, Visited, Guesses, Width);
-  }
 
 public:
   BaseSolver(std::unique_ptr<SMTLIBSolver> SMTSolver, unsigned Timeout)
@@ -83,7 +83,7 @@ public:
     InstMapping Mapping(IC.getInst(Inst::And, W, { LHS, Mask }), IC.getConst(Zero));
     bool IsSat;
     Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
-    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
+    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                   IsSat, 0, 0, Timeout);
     if (EC)
       llvm::report_fatal_error("stopping due to error");
@@ -99,7 +99,7 @@ public:
     InstMapping Mapping(IC.getInst(Inst::And, W, { LHS, Mask }), Mask);
     bool IsSat;
     Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
-    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
+    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                   IsSat, 0, 0, Timeout);
     if (EC)
       llvm::report_fatal_error("stopping due to error");
@@ -145,7 +145,7 @@ public:
     InstMapping Mapping(IC.getInst(Inst::And, W, { LHS, Mask }), IC.getConst(Ones));
     bool IsSat;
     Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
-    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
+    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                   IsSat, 0, 0, Timeout);
     if (EC)
       llvm::report_fatal_error("stopping due to error");
@@ -189,7 +189,7 @@ public:
     //InstMapping Mapping(PowerMask, Zero);
     bool IsSat;
     Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
-    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
+    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                   IsSat, 0, 0, Timeout);
     if (EC)
       llvm::report_fatal_error("stopping due to error");
@@ -214,7 +214,7 @@ public:
     InstMapping Mapping(NonZeroGuess, True);
     bool IsSat;
     Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
-    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
+    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                   IsSat, 0, 0, Timeout);
     if (EC)
       llvm::report_fatal_error("stopping due to error");
@@ -249,7 +249,7 @@ public:
       InstMapping Mapping(Guess, True);
       bool IsSat;
       Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
-      std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(BPCs, PCs, Mapping, 0),
+      std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                     IsSat, 0, 0, Timeout);
       if (EC)
         llvm::report_fatal_error("stopping due to error");
@@ -286,7 +286,7 @@ public:
         Guesses.emplace_back(IC.getConst(APInt(LHS->Width, -1)));
       for (auto I : Guesses) {
         InstMapping Mapping(LHS, I);
-        std::string Query = BuildQuery(BPCs, PCs, Mapping, 0);
+        std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
         if (Query.empty())
           return std::make_error_code(std::errc::value_too_large);
         bool IsSat;
@@ -305,7 +305,7 @@ public:
       std::vector<llvm::APInt> ModelVals;
       Inst *I = IC.createVar(LHS->Width, "constant");
       InstMapping Mapping(LHS, I);
-      std::string Query = BuildQuery(BPCs, PCs, Mapping, &ModelInsts, /*Negate=*/true);
+      std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, &ModelInsts, /*Negate=*/true);
       if (Query.empty())
         return std::make_error_code(std::errc::value_too_large);
       bool IsSat;
@@ -322,10 +322,11 @@ public:
             break;
           }
         }
-        assert(Const && "there must be a model for the constant");
+        if (!Const)
+          report_fatal_error("there must be a model for the constant");
         // Check if the constant is valid for all inputs
         InstMapping ConstMapping(LHS, Const);
-        std::string Query = BuildQuery(BPCs, PCs, ConstMapping, 0);
+        std::string Query = BuildQuery(IC, BPCs, PCs, ConstMapping, 0);
         if (Query.empty())
           return std::make_error_code(std::errc::value_too_large);
         EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
@@ -340,38 +341,86 @@ public:
 
     if (InferNop) {
       std::vector<Inst *> Guesses;
-      std::set<Inst *> Visited;
-      findVars(LHS, Visited, Guesses, LHS->Width);
+      findCands(LHS, Guesses, /*WidthMustMatch=*/true, /*FilterVars=*/false, MaxNops);
+
+      Inst *Ante = IC.getConst(APInt(1, true));
+      BlockPCs BPCsCopy;
+      std::vector<InstMapping> PCsCopy;
       for (auto I : Guesses) {
-        if (LHS == I)
-          continue;
-        InstMapping Mapping(LHS, I);
-        std::string Query = BuildQuery(BPCs, PCs, Mapping, 0);
-        if (Query.empty())
-          return std::make_error_code(std::errc::value_too_large);
-        bool IsSat;
-        EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
-        if (EC)
-          return EC;
-        if (!IsSat) {
-          RHS = I;
-          return EC;
+        // separate sub-expressions by copying vars
+        std::map<Inst *, Inst *> InstCache;
+        std::map<Block *, Block *> BlockCache;
+        Inst *Ne = IC.getInst(Inst::Ne, 1, {getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+              getInstCopy(I, IC, InstCache, BlockCache, 0, true)});
+        Ante = IC.getInst(Inst::And, 1, {Ante, Ne});
+        separateBlockPCs(BPCs, BPCsCopy, InstCache, BlockCache, IC, 0, true);
+        separatePCs(PCs, PCsCopy, InstCache, BlockCache, IC, 0, true);
+      }
+
+      // (LHS != i_1) && (LHS != i_2) && ... && (LHS != i_n) == true
+      InstMapping Mapping(Ante, IC.getConst(APInt(1, true)));
+      std::string Query = BuildQuery(IC, BPCsCopy, PCsCopy, Mapping, 0, /*Negate=*/true);
+      if (Query.empty())
+        return std::make_error_code(std::errc::value_too_large);
+      bool BigQueryIsSat;
+      EC = SMTSolver->isSatisfiable(Query, BigQueryIsSat, 0, 0, Timeout);
+      if (EC)
+        return EC;
+
+      bool SmallQueryIsSat = true;
+      if (StressNop || !BigQueryIsSat) {
+        // find the nop
+        for (auto I : Guesses) {
+          InstMapping Mapping(LHS, I);
+          std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
+          if (Query.empty())
+            continue;
+          EC = SMTSolver->isSatisfiable(Query, SmallQueryIsSat, 0, 0, Timeout);
+          if (EC)
+            return EC;
+          if (!SmallQueryIsSat) {
+            RHS = I;
+            break;
+          }
         }
       }
+
+      if (!BigQueryIsSat && SmallQueryIsSat) {
+        llvm::errs() << "*** oops ***\n";
+        ReplacementContext C;
+        llvm::errs() << GetReplacementLHSString(BPCs, PCs, LHS, C) << "\n";
+        report_fatal_error("big query indicated a nop, but none was found");
+      }
+      if (BigQueryIsSat && !SmallQueryIsSat) {
+        llvm::errs() << "*** oops ***\n";
+        ReplacementContext C;
+        llvm::errs() << GetReplacementLHSString(BPCs, PCs, LHS, C) << "\n";
+        report_fatal_error("big query did not indicate a nop, but one was found");
+      }
+
+      if (!SmallQueryIsSat)
+        return EC;
     }
 
-    if (InferInsts && SMTSolver->supportsModels()) {
-      InstSynthesis IS;
-      EC = IS.synthesize(SMTSolver.get(), BPCs, PCs, LHS, RHS, IC, Timeout);
-      if (EC || RHS)
-        return EC;
+    if(SMTSolver->supportsModels()) {
+      if (EnableExhaustiveSynthesis) {
+        ExhaustiveSynthesis ES;
+        EC = ES.synthesize(SMTSolver.get(), BPCs, PCs, LHS, RHS, IC, Timeout);
+        if (EC || RHS)
+          return EC;
+      } else if (InferInsts) {
+        InstSynthesis IS;
+        EC = IS.synthesize(SMTSolver.get(), BPCs, PCs, LHS, RHS, IC, Timeout);
+        if (EC || RHS)
+          return EC;
+      }
     }
 
     RHS = 0;
     return EC;
   }
 
-  std::error_code isValid(const BlockPCs &BPCs,
+  std::error_code isValid(InstContext &IC, const BlockPCs &BPCs,
                           const std::vector<InstMapping> &PCs,
                           InstMapping Mapping, bool &IsValid,
                           std::vector<std::pair<Inst *, llvm::APInt>> *Model)
@@ -379,7 +428,7 @@ public:
     std::string Query;
     if (Model && SMTSolver->supportsModels()) {
       std::vector<Inst *> ModelInsts;
-      std::string Query = BuildQuery(BPCs, PCs, Mapping, &ModelInsts);
+      std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, &ModelInsts);
       if (Query.empty())
         return std::make_error_code(std::errc::value_too_large);
       bool IsSat;
@@ -396,7 +445,7 @@ public:
       }
       return EC;
     } else {
-      std::string Query = BuildQuery(BPCs, PCs, Mapping, 0);
+      std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
       if (Query.empty())
         return std::make_error_code(std::errc::value_too_large);
       bool IsSat;
@@ -452,20 +501,20 @@ public:
     }
   }
 
-  std::error_code isValid(const BlockPCs &BPCs,
+  std::error_code isValid(InstContext &IC, const BlockPCs &BPCs,
                           const std::vector<InstMapping> &PCs,
                           InstMapping Mapping, bool &IsValid,
                           std::vector<std::pair<Inst *, llvm::APInt>> *Model)
     override {
     // TODO: add caching support for models.
     if (Model)
-      return UnderlyingSolver->isValid(BPCs, PCs, Mapping, IsValid, Model);
+      return UnderlyingSolver->isValid(IC, BPCs, PCs, Mapping, IsValid, Model);
 
     std::string Repl = GetReplacementString(BPCs, PCs, Mapping);
     const auto &ent = IsValidCache.find(Repl);
     if (ent == IsValidCache.end()) {
       ++MemMissesIsValid;
-      std::error_code EC = UnderlyingSolver->isValid(BPCs, PCs,
+      std::error_code EC = UnderlyingSolver->isValid(IC, BPCs, PCs,
                                                      Mapping, IsValid, 0);
       IsValidCache.emplace(Repl, std::make_pair(EC, IsValid));
       return EC;
@@ -570,14 +619,14 @@ public:
     }
   }
 
-  std::error_code isValid(const BlockPCs &BPCs,
+  std::error_code isValid(InstContext &IC, const BlockPCs &BPCs,
                           const std::vector<InstMapping> &PCs,
                           InstMapping Mapping, bool &IsValid,
                           std::vector<std::pair<Inst *, llvm::APInt>> *Model)
   override {
     // N.B. we decided that since the important clients have moved to infer(),
     // we'll no longer support external caching for isValid()
-    return UnderlyingSolver->isValid(BPCs, PCs, Mapping, IsValid, Model);
+    return UnderlyingSolver->isValid(IC, BPCs, PCs, Mapping, IsValid, Model);
   }
 
   std::string getName() override {

@@ -12,19 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "klee/Expr.h"
-#include "klee/util/ExprPPrinter.h"
-#include "klee/util/PrintContext.h"
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/SourceMgr.h"
 #include "souper/Extractor/Candidates.h"
-#include "souper/Extractor/KLEEBuilder.h"
+#include "souper/Extractor/ExprBuilder.h"
 #include <memory>
 #include "gtest/gtest.h"
 
-using namespace klee;
 using namespace llvm;
 using namespace souper;
 
@@ -36,7 +32,7 @@ struct ExtractorTest : testing::Test {
   InstContext IC;
   ExprBuilderContext EBC;
   FunctionCandidateSet CS;
-  std::vector<std::unique_ptr<CandidateExpr>> CandExprs;
+  std::vector<std::string> CandExprs;
 
   bool extractFromIR(const char *IR) {
     SMDiagnostic Err;
@@ -63,10 +59,9 @@ struct ExtractorTest : testing::Test {
                                      IC.getConst(APInt(1, true)) };
         for (auto I : Guesses) {
           R.Mapping.RHS = I;
-          std::unique_ptr<CandidateExpr> CE(
-                  new CandidateExpr(GetCandidateExprForReplacement(R.BPCs, R.PCs,
-                  R.Mapping, false).getValue()));
-          CandExprs.emplace_back(std::move(CE));
+          std::unique_ptr<ExprBuilder> EB = createKLEEBuilder(IC);
+          std::string Cand = EB->GetExprStr(R.BPCs, R.PCs, R.Mapping, 0);
+          CandExprs.emplace_back(Cand);
         }
       }
     }
@@ -91,15 +86,7 @@ struct ExtractorTest : testing::Test {
 
   bool hasCandidateExpr(std::string Expected) {
     for (const auto &Cand : CandExprs) {
-      std::string SStr;
-      llvm::raw_string_ostream SS(SStr);
-
-      std::unique_ptr<ExprPPrinter> PP(ExprPPrinter::create(SS));
-      PP->setForceNoLineBreaks(true);
-      PP->scan(Cand->E);
-      PP->print(Cand->E);
-
-      if (SS.str() == Expected)
+      if (Cand == Expected)
         return true;
     }
     return false;
@@ -108,13 +95,14 @@ struct ExtractorTest : testing::Test {
 
 TEST_F(ExtractorTest, Simple) {
   ASSERT_TRUE(extractFromIR(R"m(
-define void @f(i32 %p, i32 %q) {
+define i1 @f(i32 %p, i32 %q) {
   %ult = icmp ult i32 %p, %q
 
   %add = add i32 %p, %q
   %ult1 = icmp ult i32 %p, %add
 
-  ret void
+  %and = or i1 %ult, %ult1
+  ret i1 %and
 }
 )m"));
 
@@ -128,22 +116,22 @@ define void @f(i32 %p, i32 %q) {
 
 TEST_F(ExtractorTest, Nsw) {
   ASSERT_TRUE(extractFromIR(R"m(
-define void @f(i32 %p, i32 %q) {
+define i1 @f(i32 %p, i32 %q) {
   %add = add nsw i32 %p, %q
   %ult = icmp ult i32 %p, %add
-  ret void
+  ret i1 %ult
 }
 )m"));
 
   EXPECT_TRUE(hasCandidateExpr(
-      "(Or (And (Eq N0:(Extract 31 N1:(Read w32 0 p)) (Extract 31 N2:(Read w32 "
-      "0 q))) (Eq false (Eq N0 (Extract 31 N3:(Add w32 N1 N2))))) (Ult N1 "
-      "N3))"));
+      "(Or (And (Eq N0:(Extract 0 (AShr w32 N1:(Read w32 0 p) 31)) (Extract 0 "
+      "(AShr w32 N2:(Read w32 0 q) 31))) (Eq false (Eq N0 (Extract 0 (AShr w32 "
+      "N3:(Add w32 N1 N2) 31))))) (Ult N1 N3))"));
 }
 
 TEST_F(ExtractorTest, PhiCond) {
   ASSERT_TRUE(extractFromIR(R"m(
-define void @f(i32 %p, i32 %q) {
+define i1 @f(i32 %p, i32 %q) {
 entry:
   br i1 undef, label %t, label %f
 
@@ -158,7 +146,7 @@ f:
 cont:
   %phi = phi i32 [ %paq, %t ], [ %pmq, %f ]
   %ult = icmp ult i32 %p, %phi
-  ret void
+  ret i1 %ult
 }
 )m"));
 
@@ -184,17 +172,17 @@ cont:
 }
 )m"));
 
-  EXPECT_TRUE(hasCandidate(R"c(%0:i32 = var ; phi
-%1:i32 = add 1:i32, %0
+  EXPECT_TRUE(hasCandidate(R"c(%0:i32 = var (range=[0,42)) ; phi
+%1:i32 = add 1:i32, %0 (hasExternalUses)
 %2:i1 = eq 42:i32, %1
 cand %2 1:i1
-)c"));
+)c")); // %phia1 has external uses.
 }
 
 TEST_F(ExtractorTest, PathCondition) {
   // Expected equivalence classes are {p, q, r} and {s}.
   ASSERT_TRUE(extractFromIR(R"m(
-define void @f(i1 %p, i1 %q, i1 %r, i1 %s) {
+define i1 @f(i1 %p, i1 %q, i1 %r, i1 %s) {
 entry:
   %pq = and i1 %p, %q
   br i1 %pq, label %bb1, label %u
@@ -212,7 +200,8 @@ bb3:
 bb4:
   %cmp1 = icmp eq i1 %p, true
   %cmp2 = icmp eq i1 %s, true
-  ret void
+  %or = or i1 %cmp1, %cmp2
+  ret i1 %or
 
 u:
   unreachable
@@ -235,5 +224,87 @@ cand %5 1:i1
 pc %0 1:i1
 %1:i1 = eq 1:i1, %0
 cand %1 1:i1
+)c"));
+}
+
+TEST_F(ExtractorTest, ExternalUses) {
+  // Expected equivalence classes are {p, q, r} and {s}.
+  ASSERT_TRUE(extractFromIR(R"m(
+@amem = common global i1 0, align 4
+@bmem = common global i1 0, align 4
+@cmem = common global i1 0, align 4
+
+define i1 @foo(i1 %x) {
+entry:
+  store i1 %x, i1* @amem, align 4
+  %a = add i1 %x, 0
+  store i1 %a, i1* @amem, align 4
+  %b = add i1 %a, 0
+  store i1 %b, i1* @bmem, align 4
+  %c = add i1 %b, 0
+  store i1 %c, i1* @cmem, align 4
+  %d = add i1 %c, 0
+  ret i1 %d
+}
+)m"));
+
+  EXPECT_TRUE(hasCandidate(R"c(%0:i1 = var ; x
+%1:i1 = add 0:i1, %0 (hasExternalUses)
+%2:i1 = add 0:i1, %1 (hasExternalUses)
+%3:i1 = add 0:i1, %2 (hasExternalUses)
+%4:i1 = add 0:i1, %3
+cand %4 1:i1
+)c"));
+}
+
+TEST_F(ExtractorTest, NoExternalUses) {
+  // Expected equivalence classes are {p, q, r} and {s}.
+  ASSERT_TRUE(extractFromIR(R"m(
+define i1 @foo(i1 %x) {
+entry:
+  %a = add i1 %x, 0
+  %b = add i1 %a, 0
+  %c = add i1 %b, 0
+  %d = add i1 %c, 0
+  ret i1 %d
+}
+)m"));
+
+  EXPECT_TRUE(hasCandidate(R"c(%0:i1 = var ; x
+%1:i1 = add 0:i1, %0
+%2:i1 = add 0:i1, %1
+%3:i1 = add 0:i1, %2
+%4:i1 = add 0:i1, %3
+cand %4 1:i1
+)c"));
+}
+
+TEST_F(ExtractorTest, PartialExternalUses) {
+  // Expected equivalence classes are {p, q, r} and {s}.
+  ASSERT_TRUE(extractFromIR(R"m(
+define i1 @foo(i1 %x) {
+entry:
+  %a = add i1 %x, 0
+  %b = add i1 %a, %x
+  %c = add i1 %b, %a
+  ret i1 %c
+}
+)m"));
+
+  EXPECT_TRUE(hasCandidate(R"c(%0:i1 = var ; x
+%1:i1 = add 0:i1, %0
+cand %1 1:i1
+)c"));
+
+  EXPECT_TRUE(hasCandidate(R"c(%0:i1 = var ; x
+%1:i1 = add 0:i1, %0 (hasExternalUses)
+%2:i1 = add %0, %1
+cand %2 1:i1
+)c"));
+  EXPECT_TRUE(hasCandidate(R"c(%0:i1 = var ; x
+%1:i1 = add 0:i1, %0
+%2:i1 = add %0, %1
+%3:i1 = add %1, %2
+cand %3 1:i1
 )c"));
 }

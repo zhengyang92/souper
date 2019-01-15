@@ -1,8 +1,8 @@
 ; REQUIRES: solver, solver-model
 
-; RUN: llvm-as -o %t1 %s
+; RUN: %llvm-as -o %t1 %s
 ; RUN: %souper %solver -souper-infer-iN %t1 > %t2
-; RUN: FileCheck %s -check-prefix=SUCCESS < %t2
+; RUN: %FileCheck %s -check-prefix=SUCCESS < %t2
 
 ; SUCCESS: cand %12 301:i10
 
@@ -39,7 +39,7 @@ cont6:
   br i1 %cmp7, label %cont7, label %out
 cont7:
   %res = add i10 %x, 0
-  ret i10 %x
+  ret i10 %res
 out:
   ret i10 0
 }

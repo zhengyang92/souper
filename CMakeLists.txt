@@ -15,12 +15,18 @@ if(LLVM_CONFIG_EXECUTABLE STREQUAL "LLVM_CONFIG_EXECUTABLE-NOTFOUND")
 endif()
 
 execute_process(
+  COMMAND ${LLVM_CONFIG_EXECUTABLE} --includedir
+  OUTPUT_VARIABLE LLVM_INCLUDEDIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+execute_process(
   COMMAND ${LLVM_CONFIG_EXECUTABLE} --cppflags
   OUTPUT_VARIABLE LLVM_CXXFLAGS
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-set(LLVM_CXXFLAGS "${LLVM_CXXFLAGS} -fno-exceptions -fno-rtti -DLLVM_ENABLE_STATS=true")
+set(LLVM_CXXFLAGS "${LLVM_CXXFLAGS} -fno-exceptions -fno-rtti")
 
 execute_process(
   COMMAND ${LLVM_CONFIG_EXECUTABLE} --libs
@@ -61,10 +67,12 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-set(CLANG_CXXFLAGS "-I\"${LLVM_SRC}/tools/clang/include\" -I\"${LLVM_BUILD}/tools/clang/include\"")
+set(CLANG_CXXFLAGS "")
+set(CLANG_INCLUDEDIR "${LLVM_SRC}/tools/clang/include" "${LLVM_BUILD}/tools/clang/include")
 set(CLANG_LIBS "-lclangCodeGen -lclangTooling -lclangRewrite -lclangFrontend -lclangAnalysis -lclangParse -lclangSerialization -lclangSema -lclangEdit -lclangAnalysis -lclangAST -lclangDriver -lclangLex -lclangBasic")
 
-set(GTEST_CXXFLAGS "-I\"${LLVM_SRC}/utils/unittest/googletest/include\" -DGTEST_HAS_RTTI=0")
+set(GTEST_CXXFLAGS "-DGTEST_HAS_RTTI=0")
+set(GTEST_INCLUDEDIR "${LLVM_SRC}/utils/unittest/googletest/include")
 set(GTEST_LIBS "-lgtest_main -lgtest")
 
 set(LLVM_CXXFLAGS "${LLVM_CXXFLAGS} -std=c++11")
@@ -120,10 +128,11 @@ add_library(souperClangTool STATIC
 
 set(SOUPER_EXTRACTOR_FILES
   lib/Extractor/Candidates.cpp
+  lib/Extractor/ExprBuilder.cpp
   lib/Extractor/KLEEBuilder.cpp
   lib/Extractor/Solver.cpp
   include/souper/Extractor/Candidates.h
-  include/souper/Extractor/KLEEBuilder.h
+  include/souper/Extractor/ExprBuilder.h
   include/souper/Extractor/Solver.h
 )
 
@@ -143,6 +152,8 @@ add_library(souperKVStore STATIC
 set(SOUPER_INFER_FILES
   lib/Infer/InstSynthesis.cpp
   include/souper/Infer/InstSynthesis.h
+  lib/Infer/ExhaustiveSynthesis.cpp
+  include/souper/Infer/ExhaustiveSynthesis.h
 )
 
 add_library(souperInfer STATIC
@@ -247,12 +258,20 @@ add_executable(parser_tests
   unittests/Parser/ParserTests.cpp
 )
 
-set_target_properties(souper internal-solver-test lexer-test parser-test souper-check souperExtractor souperInfer souperInst souperKVStore souperParser souperSMTLIB2 souperTool souperPass souperPassProfileAll kleeExpr
-  PROPERTIES COMPILE_FLAGS "${LLVM_CXXFLAGS}")
-set_target_properties(souperClangTool clang-souper
-  PROPERTIES COMPILE_FLAGS "${CLANG_CXXFLAGS} ${LLVM_CXXFLAGS}")
-set_target_properties(extractor_tests inst_tests parser_tests
-  PROPERTIES COMPILE_FLAGS "${GTEST_CXXFLAGS} ${LLVM_CXXFLAGS}")
+foreach(target souper internal-solver-test lexer-test parser-test souper-check
+               souperExtractor souperInfer souperInst souperKVStore souperParser
+               souperSMTLIB2 souperTool souperPass souperPassProfileAll kleeExpr)
+  set_target_properties(${target} PROPERTIES COMPILE_FLAGS "${LLVM_CXXFLAGS}")
+  target_include_directories(${target} PRIVATE "${LLVM_INCLUDEDIR}")
+endforeach()
+foreach(target souperClangTool clang-souper)
+  set_target_properties(${target} PROPERTIES COMPILE_FLAGS "${CLANG_CXXFLAGS} ${LLVM_CXXFLAGS}")
+  target_include_directories(${target} PRIVATE "${LLVM_INCLUDEDIR}" ${CLANG_INCLUDEDIR})
+endforeach()
+foreach(target extractor_tests inst_tests parser_tests)
+  set_target_properties(${target} PROPERTIES COMPILE_FLAGS "${GTEST_CXXFLAGS} ${LLVM_CXXFLAGS}")
+  target_include_directories(${target} PRIVATE "${LLVM_INCLUDEDIR}" "${GTEST_INCLUDEDIR}")
+endforeach()
 
 target_link_libraries(kleeExpr ${LLVM_LIBS} ${LLVM_LDFLAGS})
 target_link_libraries(souperClangTool souperExtractor souperTool ${CLANG_LIBS} ${LLVM_LIBS} ${LLVM_LDFLAGS})
@@ -275,8 +294,15 @@ target_link_libraries(extractor_tests souperExtractor ${GTEST_LIBS})
 target_link_libraries(inst_tests souperInst ${GTEST_LIBS})
 target_link_libraries(parser_tests souperParser ${GTEST_LIBS})
 
+SET(BUILD_CLANG_TOOL 1 CACHE BOOL "Build the Souper Clang tool")
+if (NOT BUILD_CLANG_TOOL)
+  message(STATUS "Excluding Clang tool from build")
+  set_target_properties(souperClangTool clang-souper PROPERTIES EXCLUDE_FROM_ALL 1 EXCLUDE_FROM_DEFAULT_BUILD 1)
+endif()
+
 set(TEST_SOLVER "" CACHE STRING "Solver command line argument to use in tests, e.g. -stp-path=/path/to/stp")
 set(TEST_SYNTHESIS "" CACHE STRING "Enable additional, computationally intensive synthesis tests")
+set(TEST_LONG_DURATION_SYNTHESIS "" CACHE STRING "Enable long duration (> 10 min) synthesis tests")
 
 configure_file(
   ${CMAKE_SOURCE_DIR}/test/lit.site.cfg.in
@@ -290,7 +316,8 @@ configure_file(
 
 add_custom_target(check
   COMMAND ${CMAKE_BINARY_DIR}/run_lit
-  DEPENDS extractor_tests inst_tests parser-test parser_tests profileRuntime souper souper-check souperPass souperPassProfileAll)
+  DEPENDS extractor_tests inst_tests parser-test parser_tests profileRuntime souper souper-check souperPass souperPassProfileAll
+  USES_TERMINAL)
 
 find_program(GO_EXECUTABLE NAMES go DOC "go executable")
 if(NOT GO_EXECUTABLE STREQUAL "GO_EXECUTABLE-NOTFOUND")
@@ -299,6 +326,7 @@ if(NOT GO_EXECUTABLE STREQUAL "GO_EXECUTABLE-NOTFOUND")
   )
   set_target_properties(souperweb-backend
     PROPERTIES COMPILE_FLAGS "${LLVM_CXXFLAGS}")
+  target_include_directories(souperweb-backend PRIVATE "${LLVM_INCLUDEDIR}")
 
   target_link_libraries(souperweb-backend souperTool souperExtractor souperKVStore souperSMTLIB2 souperParser souperInst ${HIREDIS_LIBRARY})
 
@@ -312,8 +340,6 @@ add_library(profileRuntime STATIC
 set(SOUPER_PASS ${CMAKE_BINARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}souperPass${CMAKE_SHARED_LIBRARY_SUFFIX})
 set(SOUPER_PASS_PROFILE_ALL ${CMAKE_BINARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}souperPassProfileAll${CMAKE_SHARED_LIBRARY_SUFFIX})
 set(PROFILE_LIBRARY ${CMAKE_BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}profileRuntime${CMAKE_STATIC_LIBRARY_SUFFIX})
-configure_file(${CMAKE_SOURCE_DIR}/utils/sclang.in ${CMAKE_BINARY_DIR}/sclang @ONLY)
-configure_file(${CMAKE_SOURCE_DIR}/utils/sclang.in ${CMAKE_BINARY_DIR}/sclang++ @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/reduce.in ${CMAKE_BINARY_DIR}/reduce @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/cache_dump.in ${CMAKE_BINARY_DIR}/cache_dump @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/cache_knownbits.in ${CMAKE_BINARY_DIR}/cache_knownbits @ONLY)
@@ -325,3 +351,8 @@ configure_file(${CMAKE_SOURCE_DIR}/utils/cache_signbits.in ${CMAKE_BINARY_DIR}/c
 configure_file(${CMAKE_SOURCE_DIR}/utils/cache_import.in ${CMAKE_BINARY_DIR}/cache_import @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/cache_infer.in ${CMAKE_BINARY_DIR}/cache_infer @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/souper2llvm.in ${CMAKE_BINARY_DIR}/souper2llvm @ONLY)
+
+if (BUILD_CLANG_TOOL)
+  configure_file(${CMAKE_SOURCE_DIR}/utils/sclang.in ${CMAKE_BINARY_DIR}/sclang @ONLY)
+  configure_file(${CMAKE_SOURCE_DIR}/utils/sclang.in ${CMAKE_BINARY_DIR}/sclang++ @ONLY)
+endif()
