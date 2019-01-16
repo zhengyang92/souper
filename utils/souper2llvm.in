@@ -83,6 +83,8 @@ def parseOps(ops):
         op = op.strip().strip(",")
         if op[0] == "%":
             r.append([op, widths[op]])
+        elif op == "(hasExternalUses)": #for (hasExternalUses)
+            continue
         else:
             r.append(parseConst(op))
     return r
