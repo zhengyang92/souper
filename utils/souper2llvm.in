@@ -32,6 +32,8 @@ independent = []
 flagPC = 0
 MDRangePtr = 0
 metadataStr = ""
+functionDeclStr = ""
+functionDeclCount = 0
 truncCount = 0
 
 # souper IR -> LLVM inst map
@@ -78,7 +80,7 @@ def parseConst(c):
     return [constant, width]
 
 def parseOps(ops):
-    r = [] 
+    r = []
     for op in ops:
         op = op.strip().strip(",")
         if op[0] == "%":
@@ -126,8 +128,8 @@ def parseInst(i):
         assert len(tmp) == 2, "wrong reg length %d, %s" % (len(tmp), tmp)
         assert i[1] == "=", "expecting '=', got %s" % i[1]
         reg = tmp[0]
-        width = tmp[1] 
-        inst = i[2] 
+        width = tmp[1]
+        inst = i[2]
         if "overflow" in i[2]:
             width = "i" + str(int(width[1:])-1)
         widths[reg] = width
@@ -180,7 +182,7 @@ def translateInstToLLVM(i):
         if inst in boolinsts:
             assert len(ops) >= 1, "must have at least one op %s" % inst
             s += " " + ops[0][1]
-        elif inst in towidthinsts: 
+        elif inst in towidthinsts:
             assert len(ops) == 1, "must have exactly one op %s" % inst
             s += " " + ops[0][1] + " " + ops[0][0] + " to " + width
         elif inst == "extractvalue":
@@ -480,7 +482,7 @@ def parsePowerTwo(s,reg, width):
     if s == "powerOfTwo":
         print "; for " + str(width) + " bit value " + s
         powerTwo[reg] = 1
-        print "; " + str(reg) + " = 1 << %x" 
+        print "; " + str(reg) + " = 1 << %x"
         print
 
 def parsenonZero(s,reg, width):
@@ -489,7 +491,7 @@ def parsenonZero(s,reg, width):
     if s == "nonZero":
         print "; for " + str(width) + " bit value " + s
         nonZero[reg] = 1
-        print "; " + str(reg) + " != 0" 
+        print "; " + str(reg) + " != 0"
         print
 
 def parsesignBits(s,reg, width):
@@ -497,7 +499,7 @@ def parsesignBits(s,reg, width):
     s = s.strip("(").strip(")").strip("signBits=")
     print "; for signbits = " + s
     signBits[reg] = s
-    print "; " + str(reg) + " signbits" 
+    print "; " + str(reg) + " signbits"
     print
 
 def parseRange(s,reg, width):
@@ -517,6 +519,8 @@ def printFuncHeader():
     masks = ""
     global MDRangePtr
     global metadataStr
+    global functionDeclStr
+    global functionDeclCount
     for i, reg in enumerate(argmap.values()):
         if reg in knownzeros:
             regnum = reg[1:]
@@ -584,7 +588,7 @@ def printFuncHeader():
         #    "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_ule\n" +\
         #    "  " + old + " = icmp ult " + w + " " + name + ", " + str(upperr[reg]) + "\n" +\
         #    "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_ult\n" +\
-        #    " " + old + " = " + str(constrange[reg]) + w + " " + 
+        #    " " + old + " = " + str(constrange[reg]) + w + " " +
         #    + masks
         #    regtmps[reg] = name
         if reg in lower or reg in upper:
@@ -596,10 +600,13 @@ def printFuncHeader():
             ptr = "%ptr_" + str(MDRangePtr)
             masks = "  " + ptr + " = alloca " + w + "\n" +\
             "  store " + w + " " + name + ", " + w + "* " + ptr + "\n" +\
+            "  call void @fun_" + str(functionDeclCount) + "(" + w + "* " + ptr + ")\n" +\
             "  " + old + " = load " + w + ", " + w + "* " + ptr + ", !range !" + str(MDRangePtr) + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_range\n" + masks
             metadataStr = metadataStr + "!" + str(MDRangePtr) + " = " + "!{ " + w + " " + str(lower[reg]) + ", " + w + " " + str(upper[reg]) + " }\n"
             MDRangePtr += 1
+            functionDeclStr += "declare void @fun_" + str(functionDeclCount) + "(" + w + "* " + ptr + ")\n";
+            functionDeclCount += 1
         #Keep this non-zero code at the end, if more DFA's come add the if-condition for it above this if-code for nonzero
         #There might be some issues with alloc, pointers etc. in generated LLVM IR
         if reg in nonZero:
@@ -611,10 +618,13 @@ def printFuncHeader():
             ptr = "%ptr_" + str(MDRangePtr)
             masks = "  " + ptr + " = alloca " + w + "\n" +\
             "  store " + w + " " + name + ", " + w + "* " + ptr + "\n" +\
+            "  call void @fun_" + str(functionDeclCount) + "(" + w + "* " + ptr + ")\n" +\
             "  " + old + " = load " + w + ", " + w + "* " + ptr + ", !range !" + str(MDRangePtr) + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_nonZero\n" + masks
             metadataStr = metadataStr + "!" + str(MDRangePtr) + " = " + "!{ " + w + " 1" + ", " + w + " 0"+ " }\n"
             MDRangePtr += 1
+            functionDeclStr += "declare void @fun_" + str(functionDeclCount) + "(" + w + "* " + ptr + ")\n";
+            functionDeclCount += 1
 
     # global declarations: dummy store, intrinsics
     print "target datalayout = \"e-m:e-i64:64-f80:128-n8:16:32:64-S128\"\n"
@@ -715,3 +725,4 @@ printFuncBody(insts)
 printPCs()
 printLHSFuncFooter()
 print metadataStr
+print functionDeclStr
