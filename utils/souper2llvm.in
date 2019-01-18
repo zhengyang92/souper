@@ -578,19 +578,6 @@ def printFuncHeader():
             "  " + old + " = sext " + "i" + str(red_width) + " " + sign + " to " + w + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_signBits\n" + masks
             truncCount += 1
-        #if reg in constrange:
-        #    regnum = reg[1:]
-        #    w = widths[reg]
-        #    old = regtmps[reg]
-        #    name = "%t8_" + regnum
-        #    regtmps[reg] = name
-        #    masks = "  " + old + " = icmp ule " + w + " " + str(lower[reg]) + ", " + name + "\n" +\
-        #    "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_ule\n" +\
-        #    "  " + old + " = icmp ult " + w + " " + name + ", " + str(upperr[reg]) + "\n" +\
-        #    "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_ult\n" +\
-        #    " " + old + " = " + str(constrange[reg]) + w + " " +
-        #    + masks
-        #    regtmps[reg] = name
         if reg in lower or reg in upper:
             regnum = reg[1:]
             w = widths[reg]
@@ -605,10 +592,8 @@ def printFuncHeader():
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_range\n" + masks
             metadataStr = metadataStr + "!" + str(MDRangePtr) + " = " + "!{ " + w + " " + str(lower[reg]) + ", " + w + " " + str(upper[reg]) + " }\n"
             MDRangePtr += 1
-            functionDeclStr += "declare void @fun_" + str(functionDeclCount) + "(" + w + "* " + ptr + ")\n";
+            functionDeclStr += "declare void @fun_" + str(functionDeclCount) + "(" + w + "* " + ptr + ")\n"
             functionDeclCount += 1
-        #Keep this non-zero code at the end, if more DFA's come add the if-condition for it above this if-code for nonzero
-        #There might be some issues with alloc, pointers etc. in generated LLVM IR
         if reg in nonZero:
             regnum = reg[1:]
             w = widths[reg]
@@ -623,7 +608,7 @@ def printFuncHeader():
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_nonZero\n" + masks
             metadataStr = metadataStr + "!" + str(MDRangePtr) + " = " + "!{ " + w + " 1" + ", " + w + " 0"+ " }\n"
             MDRangePtr += 1
-            functionDeclStr += "declare void @fun_" + str(functionDeclCount) + "(" + w + "* " + ptr + ")\n";
+            functionDeclStr += "declare void @fun_" + str(functionDeclCount) + "(" + w + "* " + ptr + ")\n"
             functionDeclCount += 1
 
     # global declarations: dummy store, intrinsics
