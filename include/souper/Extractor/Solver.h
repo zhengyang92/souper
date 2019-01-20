@@ -16,6 +16,7 @@
 #define SOUPER_EXTRACTOR_SOLVER_H
 
 #include "llvm/ADT/APInt.h"
+#include "llvm/IR/ConstantRange.h"
 #include "souper/KVStore/KVStore.h"
 #include "souper/Tool/CandidateMapUtils.h"
 #include "souper/Extractor/Candidates.h"
@@ -67,6 +68,12 @@ public:
   std::error_code signBits(const BlockPCs &BPCs,
                             const std::vector<InstMapping> &PCs,
                             Inst *LHS, unsigned &SignBits,
+                            InstContext &IC) = 0;
+  virtual
+  std::error_code range(const BlockPCs &BPCs,
+                            const std::vector<InstMapping> &PCs,
+                            Inst *LHS, llvm::ConstantRange &Range,
+                            llvm::APInt &PrevLow, llvm::APInt &PrevUp,
                             InstContext &IC) = 0;
 };
 

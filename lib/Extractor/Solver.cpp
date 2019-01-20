@@ -264,6 +264,363 @@ public:
     return std::error_code();
   }
 
+//  std::error_code range(const BlockPCs &BPCs,
+//                              const std::vector<InstMapping> &PCs,
+//                              Inst *LHS, llvm::ConstantRange &Range,
+//                              InstContext &IC) override {
+//    unsigned W = LHS->Width;
+//    APInt TrueGuess(1, 1, false);
+//    Inst *True = IC.getConst(TrueGuess);
+//    // trying only with non-wrapped range first, so lets initialize
+//    // range with Int_MIN to INT_MAX
+//    llvm::outs() << "signed max value = " << APInt::getSignedMaxValue(W) << "\n";
+//    Range = llvm::ConstantRange(APInt(W, 0, false), APInt::getSignedMaxValue(W));
+//    
+//    // verify if LHS is between MIN and MAX - this should be true in all non-wrapped cases
+//    Inst *Lower = IC.getConst(Range.getLower());
+//    Inst *Upper = IC.getConst(Range.getUpper());
+//
+//    Inst *GuessLowerPart = IC.getInst(Inst::Ule, 1, {Lower, LHS});
+//    Inst *GuessUpperPart = IC.getInst(Inst::Ult, 1, {LHS, Upper});
+//    Inst *Guess = IC.getInst(Inst::And, 1, { GuessLowerPart, GuessUpperPart });
+//
+//    InstMapping Mapping(Guess, True);
+//    bool IsSat;
+//    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+//                                                  IsSat, 0, 0, Timeout);
+//    if (EC)
+//      llvm::report_fatal_error("stopping due to error");
+//  
+//    if (!IsSat) {
+//      //Guess is correct, keep looking for shorter range here later using binary search
+//      continue;
+//    }
+//      Range = llvm::ConstantRange(APInt(W, 0, false), APInt::getSignedMaxValue(W));
+//    else {
+//      llvm::outs() << "full set range\n";
+//      Range = llvm::ConstantRange(W, /*isFullSet*/true);
+//    }
+//    return std::error_code();
+//  }
+
+  bool testRange(const BlockPCs &BPCs,
+                              const std::vector<InstMapping> &PCs,
+                              Inst *LHS, llvm::APInt &Lower,
+                              llvm::APInt &Upper,
+                              InstContext &IC) {
+    unsigned W = LHS->Width;
+
+    Inst *LowerVal = IC.getConst(Lower);
+    Inst *UpperVal = IC.getConst(Upper);
+
+    Inst *GuessLowerPart = IC.getInst(Inst::Ule, 1, {LowerVal, LHS});
+    Inst *GuessUpperPart = IC.getInst(Inst::Ult, 1, {LHS, UpperVal});
+    Inst *Guess = 0;
+    if (Lower.ugt(Upper)) { // wrapped set
+      Guess = IC.getInst(Inst::Or, 1, { GuessLowerPart, GuessUpperPart });
+    } else {
+      Guess = IC.getInst(Inst::And, 1, { GuessLowerPart, GuessUpperPart });
+    }
+
+    APInt TrueGuess(1, 1, false);
+    Inst *True = IC.getConst(TrueGuess);
+
+    InstMapping Mapping(Guess, True);
+    bool IsSat;
+    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                  IsSat, 0, 0, Timeout);
+    if (EC)
+      llvm::report_fatal_error("stopping due to error");
+
+    return !IsSat;
+  }
+
+  std::error_code range(const BlockPCs &BPCs,
+                              const std::vector<InstMapping> &PCs,
+                              Inst *LHS, llvm::ConstantRange &Range,
+                              APInt &PreviousLow, APInt &PreviousUp,
+                              InstContext &IC) override {
+    unsigned W = LHS->Width;
+    APInt TrueGuess(1, 1, false);
+    Inst *True = IC.getConst(TrueGuess);
+   
+    APInt Lower = Range.getLower();
+    APInt Upper = Range.getUpper();
+    //llvm::outs() << "START range() : Lower = " << Lower << ", Upper = " << Upper << "\n";
+
+    bool IsGuessTrue;
+    Inst *ZeroGuess = 0;
+    if (Range.isFullSet()) {
+      //llvm::outs() << "Full set testing --- w,r,t, 0\n";
+      ZeroGuess = IC.getInst(Inst::Ult, 1, {LHS, IC.getConst(APInt(W, 0))});
+      InstMapping Mapping(ZeroGuess, True);
+  
+      std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                    IsGuessTrue, 0, 0, Timeout);
+      if (EC)
+        llvm::report_fatal_error("stopping due to error");
+  
+      if (!IsGuessTrue) {
+        // range is: MIN, 0
+        //llvm::outs() << "x < 0\n";
+        Range = llvm::ConstantRange(APInt::getSignedMinValue(W), APInt(W, 0));
+        PreviousLow = APInt::getSignedMinValue(W);
+        PreviousUp = APInt(W, 0);
+        //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
+      } else {
+        // query SMT solver for x <= 0 and more cases
+        ZeroGuess = IC.getInst(Inst::Ule, 1, {LHS, IC.getConst(APInt(W, 0))});
+        InstMapping Mapping(ZeroGuess, True);
+  
+        std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                      IsGuessTrue, 0, 0, Timeout);
+        if (EC)
+          llvm::report_fatal_error("stopping due to error");
+  
+        if (!IsGuessTrue) {
+          // range is: MIN, 1
+          //llvm::outs() << "x <= 0\n";
+          Range = llvm::ConstantRange(APInt::getSignedMinValue(W), APInt(W, 1));
+          PreviousLow = APInt::getSignedMinValue(W);
+          PreviousUp = APInt(W, 1);
+          //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
+        } else {
+          // query SMT solver for x > 0 and more cases
+          ZeroGuess = IC.getInst(Inst::Ult, 1, {IC.getConst(APInt(W, 0)), LHS});
+          InstMapping Mapping(ZeroGuess, True);
+  
+          std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                        IsGuessTrue, 0, 0, Timeout);
+          if (EC)
+            llvm::report_fatal_error("stopping due to error");
+  
+          if (!IsGuessTrue) {
+            // range is: 1, MIN
+            //llvm::outs() << "x > 0\n";
+            Range = llvm::ConstantRange(APInt(W, 1), APInt::getSignedMinValue(W));
+            PreviousLow = APInt(W, 1);
+            PreviousUp = APInt::getSignedMinValue(W);
+            //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
+          } else {
+            // query SMT solver for x >= 0 and more cases
+            ZeroGuess = IC.getInst(Inst::Ule, 1, {IC.getConst(APInt(W, 0)), LHS});
+            InstMapping Mapping(ZeroGuess, True);
+  
+            std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                          IsGuessTrue, 0, 0, Timeout);
+            if (EC)
+              llvm::report_fatal_error("stopping due to error");
+  
+            if (!IsGuessTrue) {
+              // range is: 0, MIN
+              //llvm::outs() << "x >= 0\n";
+              Range = llvm::ConstantRange(APInt(W, 0), APInt::getSignedMinValue(W));
+              PreviousLow = APInt(W, 0);
+              PreviousUp = APInt::getSignedMinValue(W);
+              //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
+            } else {
+              // Range is distributed in both negative and positive side
+              // Make it more specific later: TODO
+              // currently, return previousLow, previousHigh
+              //llvm::outs() << "Nothing wrt 0 here, else case, we simply set range to prev low and prev up i.e. as--\n";
+              //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
+              Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+            }
+          }
+        }
+      }
+    }
+    
+    //llvm::outs() << "Now TestRange() begins here for Low == " << Range.getLower() << ", Up = " << Range.getUpper() << "\n";
+    APInt LowerVal = Range.getLower();
+    APInt UpperVal = Range.getUpper();
+    if (testRange(BPCs, PCs, LHS, LowerVal, UpperVal, IC)) {
+      //llvm::outs() << "test range passed, so partition with Mid value further \n";
+      // partition the range into two halves by verifying the mid value
+      // if range.isNOTWrappedSet =>
+      //   mid = low + up /2
+      // else range.isWrappedSet =>
+      //   distance_from_max = abs(lower - MAX)
+      //   distance_from_min = abs(smin - upper)
+      //   mid = total_distance/2
+      //   range1 = lower, lower+mid 
+      //   range2 = lower+mid, high
+      APInt Mid = APInt(W, 0);
+      Inst *MidGuess = 0;
+      if (!Range.isWrappedSet()) {
+        Mid += Range.getLower();
+        Mid += Range.getUpper();
+        Mid = Mid.udiv(APInt(W, 2));
+        //llvm::outs() << "Mid = " << Mid << "\n";
+      } else {
+        // wrapped set (Lower is close to max, upper is close to min)
+        APInt DistFromMax = APInt(W, 0);
+        APInt DistFromMin = APInt(W, 0);
+        APInt TotalElementsInSet = APInt(W, 0);
+        DistFromMax += Range.getLower();
+        DistFromMax -= APInt::getSignedMaxValue(W);
+        TotalElementsInSet += DistFromMin.abs();
+        TotalElementsInSet += DistFromMax.abs();
+        Mid = TotalElementsInSet.udiv(APInt(W, 2));
+        Mid += Range.getLower();
+        //llvm::outs() << "Mid = " << Mid << "\n";
+      }
+      MidGuess = IC.getInst(Inst::Ult, 1, {LHS, IC.getConst(Mid)});
+      InstMapping Mapping(MidGuess, True);
+  
+      std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                    IsGuessTrue, 0, 0, Timeout);
+      if (EC)
+        llvm::report_fatal_error("stopping due to error");
+  
+      if (!IsGuessTrue) {
+        // range is: lower, mid
+        Range = llvm::ConstantRange(Range.getLower(), Mid);
+        PreviousLow = Range.getLower();
+        PreviousUp = Mid;
+        return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+      } else {
+        MidGuess = IC.getInst(Inst::Ule, 1, {LHS, IC.getConst(Mid)});
+        InstMapping Mapping(MidGuess, True);
+        std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                      IsGuessTrue, 0, 0, Timeout);
+        if (EC)
+          llvm::report_fatal_error("stopping due to error");
+  
+        if (!IsGuessTrue) {
+          // range is: lower, mid+1
+          PreviousLow = Range.getLower();
+          APInt MidPlusOne(W, 1);
+          MidPlusOne += Mid;
+          PreviousUp = MidPlusOne;
+          Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+          return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+        } else {
+          // make another guess w.r.t. mid value
+          MidGuess = IC.getInst(Inst::Ult, 1, {IC.getConst(Mid), LHS});
+          InstMapping Mapping(MidGuess, True);
+          std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                        IsGuessTrue, 0, 0, Timeout);
+          if (EC)
+            llvm::report_fatal_error("stopping due to error");
+  
+          if (!IsGuessTrue) {
+            // range is: mid+1, upper
+            PreviousUp = Range.getUpper();
+            APInt MidPlusOne(W, 1);
+            MidPlusOne += Mid;
+            PreviousLow = MidPlusOne;
+            Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+            return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+          } else {
+            // make another guess
+            MidGuess = IC.getInst(Inst::Ule, 1, {IC.getConst(Mid), LHS});
+            InstMapping Mapping(MidGuess, True);
+            std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                          IsGuessTrue, 0, 0, Timeout);
+            if (EC)
+              llvm::report_fatal_error("stopping due to error");
+  
+            if (!IsGuessTrue) {
+              // range is: mid, upper
+              PreviousUp = Range.getUpper();
+              PreviousLow = Mid;
+              Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+              return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+            } else {
+              // TODO: Is this correct?
+              Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+            }
+          }
+        }
+      }
+    } else {
+      // TODO: Deal with it more precisely later
+      //llvm::outs() << "Test range failed\n";
+      Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+    }
+
+    return std::error_code();
+  }
+
+//  std::error_code range(const BlockPCs &BPCs,
+//                              const std::vector<InstMapping> &PCs,
+//                              Inst *LHS, llvm::ConstantRange &Range,
+//                              APInt &PreviousLow, APInt &PreviousUp,
+//                              InstContext &IC) override {
+//    unsigned W = LHS->Width;
+//    APInt TrueGuess(1, 1, false);
+//    Inst *True = IC.getConst(TrueGuess);
+//   
+//    APInt Lower = Range.getLower();
+//    APInt Upper = Range.getUpper();
+//    llvm::outs() << "range() : Lower = " << Lower << ", Upper = " << Upper << "\n";
+//
+//    if (testRange(BPCs, PCs, LHS, Lower, Upper, IC) || Range.isFullSet()) { //TODO: add OR Range.isFullSet()
+//      // guess is correct, do binary search
+//      llvm::outs() << "testRange() Passed\n";
+//      PreviousLow = Lower;
+//      PreviousUp = Upper;
+//      llvm::outs() << "Now, prev Low = " << PreviousLow << ", Prev Up = " << PreviousUp << "\n";
+//      APInt mid(W, 0);
+//      if (Lower == Upper && Lower.isMaxValue()) {
+//        // this is special case for full set, we will divide the range at 0
+//        llvm::outs() << "Special case of full set handled now by bifurcating at 0\n";
+//        mid = APInt(W, 0);
+//
+//        Inst *LeftGuess = IC.getInst(Inst::Ult, 1, {LHS, IC.getConst(mid)});
+//        InstMapping Mapping(LeftGuess, True);
+//        bool IsGuessTrue;
+//
+//        std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+//                                                      IsGuessTrue, 0, 0, Timeout);
+//        if (EC)
+//          llvm::report_fatal_error("stopping due to error");
+//
+//        if (!IsGuessTrue) {
+//          llvm::outs() << "Full set case: x <0 is correct\n";
+//          Range = llvm::ConstantRange(APInt(W, 0), APInt::getSignedMinValue(W));
+//          return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+//        } else {
+//          llvm::outs() << "Full set case: x <0 is NOT correct\n";
+//          Range = llvm::ConstantRange(APInt::getSignedMinValue(W), APInt(W, 0));
+//          return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+//        }
+//  
+//      } else {
+//        mid += Lower;
+//        mid += Upper;
+//        mid = mid.udiv(APInt(W, 2));
+//      
+//        Inst *LeftDirectionGuess = IC.getInst(Inst::Ult, 1, {LHS, IC.getConst(mid)});
+//        InstMapping Mapping(LeftDirectionGuess, True);
+//        bool IsTrue;
+//
+//        std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+//                                                      IsTrue, 0, 0, Timeout);
+//        if (EC)
+//          llvm::report_fatal_error("stopping due to error");
+//  
+//        if (!IsTrue) {
+//          // verify for low to mid -- left side
+//          llvm::outs() << "LHS testing begins now for: Low = " << Lower << ", Upper = " << mid << "\n";
+//          Range = llvm::ConstantRange(Lower, mid);
+//          return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+//        } else {
+//          // verify for mid to upper -- right side
+//          llvm::outs() << "RHS testing begins now for: Low = " << mid << ", Upper = " << Upper << "\n";
+//          Range = llvm::ConstantRange(mid, Upper);
+//          return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+//        }
+//      }
+//    } else {
+//      // return the previous satisfiable range
+//      llvm::outs() << "testRange() Failed\n";
+//      Range = ConstantRange(PreviousLow, PreviousUp);
+//    }
+//    return std::error_code();
+//  }
+
   std::error_code infer(const BlockPCs &BPCs,
                         const std::vector<InstMapping> &PCs,
                         Inst *LHS, Inst *&RHS, InstContext &IC) override {
@@ -571,6 +928,14 @@ public:
     return UnderlyingSolver->signBits(BPCs, PCs, LHS, SignBits, IC);
   }
 
+  std::error_code range(const BlockPCs &BPCs,
+                            const std::vector<InstMapping> &PCs,
+                            Inst *LHS, llvm::ConstantRange &Range,
+                            llvm::APInt &PrevLow, llvm::APInt &PrevUp,
+                            InstContext &IC) override {
+    return UnderlyingSolver->range(BPCs, PCs, LHS, Range, PrevLow, PrevUp, IC);
+  }
+
 };
 
 class ExternalCachingSolver : public Solver {
@@ -673,6 +1038,14 @@ public:
                             Inst *LHS, unsigned &SignBits,
                             InstContext &IC) override {
     return UnderlyingSolver->signBits(BPCs, PCs, LHS, SignBits, IC);
+  }
+
+  std::error_code range(const BlockPCs &BPCs,
+                            const std::vector<InstMapping> &PCs,
+                            Inst *LHS, llvm::ConstantRange &Range,
+                            llvm::APInt &PrevLow, llvm::APInt &PrevUp,
+                            InstContext &IC) override {
+    return UnderlyingSolver->range(BPCs, PCs, LHS, Range, PrevLow, PrevUp, IC);
   }
 
 };

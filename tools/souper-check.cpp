@@ -51,6 +51,10 @@ static cl::opt<bool> InferSignBits("infer-sign-bits",
     cl::desc("Compute sign bits for the candidate (default=false)"),
     cl::init(false));
 
+static cl::opt<bool> InferRange("infer-range",
+    cl::desc("Compute range for the candidate (default=false)"),
+    cl::init(false));
+
 static cl::opt<bool> PrintRepl("print-replacement",
     cl::desc("Print the replacement, if valid (default=false)"),
     cl::init(false));
@@ -184,6 +188,20 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
       else
         s = "";
       llvm::outs() << "known from souper: " << s << "\n";
+      return 0;
+    }
+
+    if (InferRange) {
+      unsigned W = Rep.Mapping.LHS->Width;
+      llvm::ConstantRange Range = llvm::ConstantRange(W, /*isFullSet=*/true);
+      APInt PrevLow = Range.getLower();
+      APInt PrevUp = Range.getUpper();
+      if (std::error_code EC = S->range(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                        Range, PrevLow, PrevUp, IC)) {
+        llvm::errs() << EC.message() << '\n';
+      }
+      llvm::outs() << "known from souper: " << "[" << Range.getLower()
+                    << "," << Range.getUpper() << ")" << "\n";
       return 0;
     }
 
