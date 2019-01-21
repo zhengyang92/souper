@@ -347,12 +347,13 @@ public:
     APInt Lower = Range.getLower();
     APInt Upper = Range.getUpper();
     //llvm::outs() << "START range() : Lower = " << Lower << ", Upper = " << Upper << "\n";
+    //llvm::outs() << "Start prev low = " << PreviousLow << ", prev up = " << PreviousUp << "\n";
 
     bool IsGuessTrue;
     Inst *ZeroGuess = 0;
     if (Range.isFullSet()) {
       //llvm::outs() << "Full set testing --- w,r,t, 0\n";
-      ZeroGuess = IC.getInst(Inst::Ult, 1, {LHS, IC.getConst(APInt(W, 0))});
+      ZeroGuess = IC.getInst(Inst::Slt, 1, {LHS, IC.getConst(APInt(W, 0))});
       InstMapping Mapping(ZeroGuess, True);
   
       std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
@@ -369,7 +370,7 @@ public:
         //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
       } else {
         // query SMT solver for x <= 0 and more cases
-        ZeroGuess = IC.getInst(Inst::Ule, 1, {LHS, IC.getConst(APInt(W, 0))});
+        ZeroGuess = IC.getInst(Inst::Sle, 1, {LHS, IC.getConst(APInt(W, 0))});
         InstMapping Mapping(ZeroGuess, True);
   
         std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
@@ -386,7 +387,7 @@ public:
           //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
         } else {
           // query SMT solver for x > 0 and more cases
-          ZeroGuess = IC.getInst(Inst::Ult, 1, {IC.getConst(APInt(W, 0)), LHS});
+          ZeroGuess = IC.getInst(Inst::Slt, 1, {IC.getConst(APInt(W, 0)), LHS});
           InstMapping Mapping(ZeroGuess, True);
   
           std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
@@ -403,7 +404,7 @@ public:
             //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
           } else {
             // query SMT solver for x >= 0 and more cases
-            ZeroGuess = IC.getInst(Inst::Ule, 1, {IC.getConst(APInt(W, 0)), LHS});
+            ZeroGuess = IC.getInst(Inst::Sle, 1, {IC.getConst(APInt(W, 0)), LHS});
             InstMapping Mapping(ZeroGuess, True);
   
             std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
@@ -419,12 +420,30 @@ public:
               PreviousUp = APInt::getSignedMinValue(W);
               //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
             } else {
-              // Range is distributed in both negative and positive side
-              // Make it more specific later: TODO
-              // currently, return previousLow, previousHigh
-              //llvm::outs() << "Nothing wrt 0 here, else case, we simply set range to prev low and prev up i.e. as--\n";
-              //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
-              Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+              // verify another special case if x != 0
+              ZeroGuess = IC.getInst(Inst::Ne, 1, {IC.getConst(APInt(W, 0)), LHS});
+              InstMapping Mapping(ZeroGuess, True);
+  
+              std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                            IsGuessTrue, 0, 0, Timeout);
+              if (EC)
+                llvm::report_fatal_error("stopping due to error");
+  
+              if (!IsGuessTrue) {
+                // range is: 1,0
+                //llvm::outs() << "x != 0\n";
+                Range = llvm::ConstantRange(APInt(W, 1), APInt(W, 0));
+                PreviousLow = APInt(W, 1);
+                PreviousUp = APInt(W, 0);
+                //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
+              } else {
+                // Range is distributed in both negative and positive side
+                // Make it more specific later: TODO
+                // currently, return previousLow, previousHigh
+                //llvm::outs() << "Nothing wrt 0 here, else case, we simply set range to prev low and prev up i.e. as--\n";
+                //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
+                Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+              }
             }
           }
         }
@@ -465,7 +484,7 @@ public:
         Mid += Range.getLower();
         //llvm::outs() << "Mid = " << Mid << "\n";
       }
-      MidGuess = IC.getInst(Inst::Ult, 1, {LHS, IC.getConst(Mid)});
+      MidGuess = IC.getInst(Inst::Slt, 1, {LHS, IC.getConst(Mid)});
       InstMapping Mapping(MidGuess, True);
   
       std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
@@ -480,7 +499,7 @@ public:
         PreviousUp = Mid;
         return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
       } else {
-        MidGuess = IC.getInst(Inst::Ule, 1, {LHS, IC.getConst(Mid)});
+        MidGuess = IC.getInst(Inst::Sle, 1, {LHS, IC.getConst(Mid)});
         InstMapping Mapping(MidGuess, True);
         std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                       IsGuessTrue, 0, 0, Timeout);
@@ -497,7 +516,7 @@ public:
           return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
         } else {
           // make another guess w.r.t. mid value
-          MidGuess = IC.getInst(Inst::Ult, 1, {IC.getConst(Mid), LHS});
+          MidGuess = IC.getInst(Inst::Slt, 1, {IC.getConst(Mid), LHS});
           InstMapping Mapping(MidGuess, True);
           std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                         IsGuessTrue, 0, 0, Timeout);
@@ -514,7 +533,7 @@ public:
             return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
           } else {
             // make another guess
-            MidGuess = IC.getInst(Inst::Ule, 1, {IC.getConst(Mid), LHS});
+            MidGuess = IC.getInst(Inst::Sle, 1, {IC.getConst(Mid), LHS});
             InstMapping Mapping(MidGuess, True);
             std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                           IsGuessTrue, 0, 0, Timeout);
