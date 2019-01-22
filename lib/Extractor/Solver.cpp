@@ -1090,7 +1090,22 @@ public:
         Range = llvm::ConstantRange(Range.getLower(), Mid);
         PreviousLow = Range.getLower();
         PreviousUp = Mid;
-        return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+        //TODO: check distance between range.lower and range.upper
+        // if distance <=2 -> look for independent values or ranges in parts
+        // return Range at the end
+
+        APInt Diff(W, 0);
+        Diff = PreviousUp;
+        Diff -= PreviousLow;
+        Diff = Diff.abs();
+
+        if (Diff.ule(APInt(W, 2))) {
+          // FIXME: Check the exact value of upper bound <= or < previousUp or check with <= or < Mid value first?
+          Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+        } else {
+          return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+        }
+        //return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
       } else {
         MidGuess = IC.getInst(Inst::Sle, 1, {LHS, IC.getConst(Mid)});
         InstMapping Mapping(MidGuess, True);
@@ -1106,7 +1121,21 @@ public:
           MidPlusOne += Mid;
           PreviousUp = MidPlusOne;
           Range = llvm::ConstantRange(PreviousLow, PreviousUp);
-          return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+
+
+          APInt Diff(W, 0);
+          Diff = PreviousUp;
+          Diff -= PreviousLow;
+          Diff = Diff.abs();
+
+          if (Diff.ule(APInt(W, 2))) {
+            // FIXME: Check the exact value of upper bound <= or < previousUp or check with <= or < Mid value first?
+            Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+          } else {
+            return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+          }
+
+          //return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
         } else {
           // make another guess w.r.t. mid value
           MidGuess = IC.getInst(Inst::Slt, 1, {IC.getConst(Mid), LHS});
@@ -1123,7 +1152,20 @@ public:
             MidPlusOne += Mid;
             PreviousLow = MidPlusOne;
             Range = llvm::ConstantRange(PreviousLow, PreviousUp);
-            return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+
+
+            APInt Diff(W, 0);
+            Diff = PreviousUp;
+            Diff -= PreviousLow;
+            Diff = Diff.abs();
+
+            if (Diff.ule(APInt(W, 2))) {
+              // FIXME: Check the exact value of upper bound <= or < previousUp or check with <= or < Mid value first?
+              Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+            } else {
+              return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+            }
+            //return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
           } else {
             // make another guess
             MidGuess = IC.getInst(Inst::Sle, 1, {IC.getConst(Mid), LHS});
@@ -1138,7 +1180,19 @@ public:
               PreviousUp = Range.getUpper();
               PreviousLow = Mid;
               Range = llvm::ConstantRange(PreviousLow, PreviousUp);
-              return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+
+              APInt Diff(W, 0);
+              Diff = PreviousUp;
+              Diff -= PreviousLow;
+              Diff = Diff.abs();
+
+              if (Diff.ule(APInt(W, 2))) {
+                // FIXME: Check the exact value of upper bound <= or < previousUp or check with <= or < Mid value first?
+                Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+              } else {
+                return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
+              }
+              //return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
             } else {
               // TODO: Is this correct?
               llvm::outs() << "******* Jubi: More opportunities to optimize *******\n";
