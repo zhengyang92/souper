@@ -318,7 +318,7 @@ public:
     APInt Mid(W, 0);
     Mid += PreviousUpper;
     Mid += NewUpper;
-    Mid = Mid.udiv(APInt(W, 2));
+    Mid = Mid.sdiv(APInt(W, 2));
     Inst *Guess = 0;
 
     APInt Diff(W, 0);
@@ -453,7 +453,7 @@ public:
     APInt Mid(W, 0);
     Mid += PreviousLower;
     Mid += NewLower;
-    Mid = Mid.udiv(APInt(W, 2));
+    Mid = Mid.sdiv(APInt(W, 2));
     Inst *Guess = 0;
 
     APInt Diff(W, 0);
@@ -619,6 +619,7 @@ public:
 
     APInt FinalLower(W, 0);
     APInt FinalUpper(W, 0);
+    APInt One(W, 1);
     if (DiffLower.ule(APInt(W, 1)) && DiffUpper.ule(APInt(W, 1))) {
       // simple check and return the answer
       llvm::outs() << "Case: difflow <= 1 and diffup <= 1\n";
@@ -635,12 +636,49 @@ public:
         if (EC)
           llvm::report_fatal_error("stopping due to error");
         if (!IsSat) {
-          // guess is correct, means: lower final value is found equal to newlower
-          FinalLower = NewLower;
+          // x >= NL
+          // but, see if x > NL only
+          Guess = IC.getInst(Inst::Slt, 1, {IC.getConst(NewLower), LHS});
+          InstMapping Mapping(Guess, True);
+
+          std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                        IsSat, 0, 0, Timeout);
+          if (EC)
+            llvm::report_fatal_error("stopping due to error");
+
+          if (!IsSat) {
+            FinalLower = NewLower;
+            FinalLower += One;
+          } else {
+            FinalLower = NewLower;
+          }
           llvm::outs() << "Final Lower == " << FinalLower << "\n";
         } else {
           // final lower = previous lower
-          FinalLower = PreviousLower;
+          Guess = IC.getInst(Inst::Sle, 1, {IC.getConst(PreviousLower), LHS});
+          InstMapping Mapping(Guess, True);
+          
+          std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                        IsSat, 0, 0, Timeout);
+          if (EC)
+            llvm::report_fatal_error("stopping due to error");
+
+          if (!IsSat) {
+            Guess = IC.getInst(Inst::Slt, 1, {IC.getConst(PreviousLower), LHS});
+            InstMapping Mapping(Guess, True);
+            
+            std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                          IsSat, 0, 0, Timeout);
+            if (EC)
+              llvm::report_fatal_error("stopping due to error");
+
+            if (!IsSat) {
+              FinalLower = PreviousLower;
+              FinalLower += One;
+            } else {
+              FinalLower = PreviousLower;
+            }
+          }
           llvm::outs() << "Final Lower == " << FinalLower << "\n";
         }
       }
@@ -658,12 +696,50 @@ public:
         if (EC)
           llvm::report_fatal_error("stopping due to error");
         if (!IsSat) {
-          // guess is correct, means: lower final value is found equal to newlower
-          FinalUpper = NewUpper;
+          // x<= NU, but look if x < NU only?
+
+          Guess = IC.getInst(Inst::Slt, 1, {LHS, IC.getConst(NewUpper)});
+          InstMapping Mapping(Guess, True);
+
+          std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                        IsSat, 0, 0, Timeout);
+          if (EC)
+            llvm::report_fatal_error("stopping due to error");
+
+          if (!IsSat) {
+            FinalUpper = NewUpper;
+          } else {
+            FinalUpper = NewUpper;
+            FinalUpper += One;
+          }
           llvm::outs() << "Final Upper == " << FinalUpper << "\n";
         } else {
           // final lower = previous lower
-          FinalUpper = PreviousUpper;
+
+          Guess = IC.getInst(Inst::Sle, 1, {LHS, IC.getConst(PreviousUpper)});
+          InstMapping Mapping(Guess, True);
+          
+          std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                        IsSat, 0, 0, Timeout);
+          if (EC)
+            llvm::report_fatal_error("stopping due to error");
+
+          if (!IsSat) {
+            Guess = IC.getInst(Inst::Slt, 1, {LHS, IC.getConst(PreviousUpper)});
+            InstMapping Mapping(Guess, True);
+            
+            std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                          IsSat, 0, 0, Timeout);
+            if (EC)
+              llvm::report_fatal_error("stopping due to error");
+
+            if (!IsSat) {
+              FinalUpper = PreviousUpper;
+            } else {
+              FinalUpper = PreviousUpper;
+              FinalUpper += One;
+            }
+          }
           llvm::outs() << "Final Upper == " << FinalUpper << "\n";
         }
       }
@@ -694,12 +770,12 @@ public:
             APInt NewLowerMid(W, 0);
             NewLowerMid += PreviousLower;
             NewLowerMid += NewLower;
-            NewLowerMid = NewLowerMid.udiv(APInt(W, 2));
+            NewLowerMid = NewLowerMid.sdiv(APInt(W, 2));
 
             APInt NewUpperMid(W, 0);
             NewUpperMid += PreviousUpper;
             NewUpperMid += NewUpper;
-            NewUpperMid = NewUpperMid.udiv(APInt(W, 2));
+            NewUpperMid = NewUpperMid.sdiv(APInt(W, 2));
             llvm::outs() << "New L = " << NewLowerMid << ", New U = " << NewUpperMid << "\n";
             Range = llvm::ConstantRange(PreviousLower, PreviousUpper);
             llvm::outs() << "** GAURAV GUPTA CHAMP LELO: Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
@@ -757,6 +833,7 @@ public:
           llvm::report_fatal_error("stopping due to error");
         if (!IsSat) {
           // guess is correct, means: lower final value is found equal to newlower
+          // x <= NU
           llvm::outs() << "LHS is always <= NU " << NewUpper << "\n";
           DiffUpper = APInt(W, 0);
           FinalUpper = NewUpper;
@@ -996,7 +1073,7 @@ public:
         DistFromMax -= APInt::getSignedMaxValue(W);
         TotalElementsInSet += DistFromMin.abs();
         TotalElementsInSet += DistFromMax.abs();
-        Mid = TotalElementsInSet.udiv(APInt(W, 2));
+        Mid = TotalElementsInSet.sdiv(APInt(W, 2));
         Mid += Range.getLower();
         llvm::outs() << "Mid = " << Mid << "\n";
       }
