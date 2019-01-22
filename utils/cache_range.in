@@ -290,7 +290,8 @@ sub go($) {
 #        $ret .= "; dprofile $h{$k} \"$k\"\n";
 #    }
     $ret .= "------------------------------------------------------\n\n";
-    print $ret if $print;
+#    print $ret if $print;
+    print $ret;
     exit();
 }
 
