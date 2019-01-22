@@ -327,10 +327,10 @@ public:
     Diff = Diff.abs();
 
     bool IsGuessTrue;
-    llvm::outs() << "In searchUpperBound()\n";
+    //llvm::outs() << "In searchUpperBound()\n";
 
     if (Diff.ule(APInt(W, 2))) {
-      llvm::outs() << "Diff between PU and NU is <= 2\n";
+      //llvm::outs() << "Diff between PU and NU is <= 2\n";
       Guess = IC.getInst(Inst::Sle, 1, {LHS, IC.getConst(NewUpper)});
       InstMapping Mapping(Guess, True);
 
@@ -356,7 +356,7 @@ public:
           FinalUpper = NewUpper;
           FinalUpper += One;
         }
-        llvm::outs() << "LHS <= " << NewUpper << " = FinalUpper \n";
+        //llvm::outs() << "LHS <= " << NewUpper << " = FinalUpper \n";
       } else {
         // if x <= mid?
         Guess = IC.getInst(Inst::Sle, 1, {LHS, IC.getConst(Mid)});
@@ -382,7 +382,7 @@ public:
             FinalUpper = Mid;
             FinalUpper += One;
           }
-          llvm::outs() << "LHS <= " << Mid << " = FinalUpper \n";
+          //llvm::outs() << "LHS <= " << Mid << " = FinalUpper \n";
         } else {
           // x <= PrevUpper
           Guess = IC.getInst(Inst::Sle, 1, {LHS, IC.getConst(PreviousUpper)});
@@ -408,14 +408,14 @@ public:
               FinalUpper += One;
             }
           }
-          llvm::outs() << "LHS <= " << PreviousUpper << " = FinalUpper\n";
+          //llvm::outs() << "LHS <= " << PreviousUpper << " = FinalUpper\n";
         }
       }
       Range = llvm::ConstantRange(Range.getLower(), FinalUpper);
-      llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+      //llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
     } else {
       // look if upper bound is on left or right of left
-      llvm::outs() << "Diff between NU and PU > 2\n";
+      //llvm::outs() << "Diff between NU and PU > 2\n";
       Guess = IC.getInst(Inst::Sle, 1, {LHS, IC.getConst(Mid)});
       InstMapping Mapping(Guess, True);
 
@@ -433,7 +433,7 @@ public:
       }
     }
     Range = llvm::ConstantRange(Range.getLower(), FinalUpper);
-    llvm::outs()  << "** just before return in searchUB: Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+    //llvm::outs()  << "** just before return in searchUB: Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
 
     return std::error_code();
   }
@@ -490,7 +490,7 @@ public:
         } else {
           FinalLower = NewLower;
         }
-        llvm::outs() << "LHS <= " << NewLower << " = FinalLower \n";
+        //llvm::outs() << "LHS <= " << NewLower << " = FinalLower \n";
       } else {
         // if x >= mid?
         Guess = IC.getInst(Inst::Sle, 1, {IC.getConst(Mid), LHS});
@@ -517,7 +517,7 @@ public:
           } else {
             FinalLower = Mid;
           }
-          llvm::outs() << "LHS <= " << Mid << " = FinalLower \n";
+          //llvm::outs() << "LHS <= " << Mid << " = FinalLower \n";
         } else {
           // x >= PrevLower
           Guess = IC.getInst(Inst::Sle, 1, {IC.getConst(PreviousLower), LHS});
@@ -567,7 +567,7 @@ public:
 //          FinalLower = PreviousLower;
 //        }
       Range = llvm::ConstantRange(FinalLower, Range.getUpper());
-      llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+      //llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
     } else {
       // look if lower bound is on left or right of left
       Guess = IC.getInst(Inst::Sle, 1, {LHS, IC.getConst(Mid)});
@@ -599,30 +599,30 @@ public:
                               llvm::APInt &NewLower, llvm::APInt &NewUpper,
                               InstContext &IC) {
     unsigned W = LHS->Width;
-    llvm::outs() << "In func: moreRangeTest()\n";
-    llvm::outs() << "ENTRY of G_FN: Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
-    llvm::outs() << "PL, PU = " << PreviousLower << ", " << PreviousUpper << "\n";
-    llvm::outs() << "NL, NU = " << NewLower << ", " << NewUpper << "\n";
-    llvm::outs() << "Difference of prev low and new low\n";
+    //llvm::outs() << "In func: moreRangeTest()\n";
+    //llvm::outs() << "ENTRY of G_FN: Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+    //llvm::outs() << "PL, PU = " << PreviousLower << ", " << PreviousUpper << "\n";
+    //llvm::outs() << "NL, NU = " << NewLower << ", " << NewUpper << "\n";
+    //llvm::outs() << "Difference of prev low and new low\n";
 
     APInt DiffLower(W, 0);
     DiffLower += PreviousLower;
     DiffLower -= NewLower;
     DiffLower = DiffLower.abs();
-    llvm::outs() << "Diff Lower = " << DiffLower << "\n";
+    //llvm::outs() << "Diff Lower = " << DiffLower << "\n";
 
     APInt DiffUpper(W, 0);
     DiffUpper += PreviousUpper;
     DiffUpper -= NewUpper;
     DiffUpper = DiffUpper.abs();
-    llvm::outs() << "Diff Upper = " << DiffUpper << "\n";
+    //llvm::outs() << "Diff Upper = " << DiffUpper << "\n";
 
     APInt FinalLower(W, 0);
     APInt FinalUpper(W, 0);
     APInt One(W, 1);
     if (DiffLower.ule(APInt(W, 1)) && DiffUpper.ule(APInt(W, 1))) {
       // simple check and return the answer
-      llvm::outs() << "Case: difflow <= 1 and diffup <= 1\n";
+      //llvm::outs() << "Case: difflow <= 1 and diffup <= 1\n";
       if (NewLower.sgt(PreviousLower)) { // new > prev, test x>=new
         Inst *FinalLValue = IC.getConst(NewLower);
         Inst *Guess = IC.getInst(Inst::Sle, 1, {IC.getConst(NewLower), LHS});
@@ -652,7 +652,7 @@ public:
           } else {
             FinalLower = NewLower;
           }
-          llvm::outs() << "Final Lower == " << FinalLower << "\n";
+          //llvm::outs() << "Final Lower == " << FinalLower << "\n";
         } else {
           // final lower = previous lower
           Guess = IC.getInst(Inst::Sle, 1, {IC.getConst(PreviousLower), LHS});
@@ -679,7 +679,7 @@ public:
               FinalLower = PreviousLower;
             }
           }
-          llvm::outs() << "Final Lower == " << FinalLower << "\n";
+          //llvm::outs() << "Final Lower == " << FinalLower << "\n";
         }
       }
       // finalize the upper bound
@@ -712,7 +712,7 @@ public:
             FinalUpper = NewUpper;
             FinalUpper += One;
           }
-          llvm::outs() << "Final Upper == " << FinalUpper << "\n";
+          //llvm::outs() << "Final Upper == " << FinalUpper << "\n";
         } else {
           // final lower = previous lower
 
@@ -740,33 +740,33 @@ public:
               FinalUpper += One;
             }
           }
-          llvm::outs() << "Final Upper == " << FinalUpper << "\n";
+          //llvm::outs() << "Final Upper == " << FinalUpper << "\n";
         }
       }
       Range = llvm::ConstantRange(FinalLower, FinalUpper);
-      llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+      //llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
     } else if (DiffLower.ugt(APInt(W, 1)) && DiffUpper.ugt(APInt(W, 1))) {
       // keep iterating as normal
-      llvm::outs() << "case: diff low > 1 and diff up > 1 -- make three ranges for testing here!!\n";
+      //llvm::outs() << "case: diff low > 1 and diff up > 1 -- make three ranges for testing here!!\n";
       if (testRange(BPCs, PCs, LHS, NewLower, NewUpper, IC)) {
         Range = llvm::ConstantRange(NewLower, NewUpper);
-        llvm::outs() << "Test passed for: Low = " << NewLower << ",  Up = " << NewUpper << "\n";
+        //llvm::outs() << "Test passed for: Low = " << NewLower << ",  Up = " << NewUpper << "\n";
         return range(BPCs, PCs, LHS, Range, NewLower, NewUpper, IC);
       } else {
         if (testRange(BPCs, PCs, LHS, NewLower, PreviousUpper, IC)) {
           Range = llvm::ConstantRange(NewLower, PreviousUpper);
-          llvm::outs() << "Test passed for  low = " << NewLower << ", Upper = " << PreviousUpper << "\n";
+          //llvm::outs() << "Test passed for  low = " << NewLower << ", Upper = " << PreviousUpper << "\n";
           return range(BPCs, PCs, LHS, Range, NewLower, PreviousUpper, IC);
         } else {
           if (testRange(BPCs, PCs, LHS, PreviousLower, NewUpper, IC)) {
-            llvm::outs() << "Test passed for low = " << PreviousLower << ", " << NewUpper << "\n";
+            //llvm::outs() << "Test passed for low = " << PreviousLower << ", " << NewUpper << "\n";
             Range = llvm::ConstantRange(PreviousLower, NewUpper);
             return range(BPCs, PCs, LHS, Range, PreviousLower, NewUpper, IC);
           } else {
             // we learned another new lower and upper range
             // new lower mid = pl + nl / 2
             // new upper mid = nu + pu / 2
-            llvm::outs() << "No mini tests passed, learn and iterate again\n\n";
+            //llvm::outs() << "No mini tests passed, learn and iterate again\n\n";
             APInt NewLowerMid(W, 0);
             NewLowerMid += PreviousLower;
             NewLowerMid += NewLower;
@@ -776,18 +776,18 @@ public:
             NewUpperMid += PreviousUpper;
             NewUpperMid += NewUpper;
             NewUpperMid = NewUpperMid.sdiv(APInt(W, 2));
-            llvm::outs() << "New L = " << NewLowerMid << ", New U = " << NewUpperMid << "\n";
+            //llvm::outs() << "New L = " << NewLowerMid << ", New U = " << NewUpperMid << "\n";
             Range = llvm::ConstantRange(PreviousLower, PreviousUpper);
-            llvm::outs() << "** GAURAV GUPTA CHAMP LELO: Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+            //llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
             return moreRangeTest(BPCs, PCs, LHS, Range, PreviousLower, PreviousUpper, NewLowerMid, NewUpperMid, IC);
           }
         }
       }
     } else if (DiffLower.ule(APInt(W, 1)) && DiffUpper.ugt(APInt(W, 1))) {
       // fix lower only iterate for upper
-      llvm::outs() << "case: diff low <= 1 and diff up > 1\n";
+      //llvm::outs() << "case: diff low <= 1 and diff up > 1\n";
       if (NewLower.sgt(PreviousLower)) { // new > prev, test x>=new
-        llvm::outs() << "NL > PL\n";
+        //llvm::outs() << "NL > PL\n";
         Inst *FinalLValue = IC.getConst(NewLower);
         Inst *Guess = IC.getInst(Inst::Sle, 1, {IC.getConst(NewLower), LHS});
         APInt TrueGuess(1, 1, false);
@@ -801,24 +801,24 @@ public:
           llvm::report_fatal_error("stopping due to error");
         if (!IsSat) {
           // guess is correct, means: lower final value is found equal to newlower
-          llvm::outs() << "LHS is always >= NL " << NewLower << "\n";
+          //llvm::outs() << "LHS is always >= NL " << NewLower << "\n";
           DiffLower = APInt(W, 0);
           FinalLower = NewLower;
         } else {
           // final lower = previous lower
-          llvm::outs() << "LHS is always <=  PL " << PreviousLower << "\n";
+          //llvm::outs() << "LHS is always <=  PL " << PreviousLower << "\n";
           DiffLower = APInt(W, 0);
           FinalLower = PreviousLower;
         }
       }
       // iterate for upper now between newupper and previous upper only
-      llvm::outs() << "iterate for upper bound only \n\n";
+      //llvm::outs() << "iterate for upper bound only \n\n";
       Range = llvm::ConstantRange(FinalLower, PreviousUpper);
-      llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+      //llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
       return searchUpperBound(BPCs, PCs, LHS, Range, PreviousUpper, NewUpper, IC);
     } else { // difflower > 1 and diffupper <= 1
       // fix the upper and only iterate for lower
-      llvm::outs() << "diff low > 1 and diff up <=1\n";
+      //llvm::outs() << "diff low > 1 and diff up <=1\n";
       if (NewUpper.slt(PreviousUpper)) { // new < prev, test x<=new
         Inst *FinalLValue = IC.getConst(NewUpper);
         Inst *Guess = IC.getInst(Inst::Sle, 1, {LHS, IC.getConst(NewUpper)});
@@ -834,20 +834,20 @@ public:
         if (!IsSat) {
           // guess is correct, means: lower final value is found equal to newlower
           // x <= NU
-          llvm::outs() << "LHS is always <= NU " << NewUpper << "\n";
+          //llvm::outs() << "LHS is always <= NU " << NewUpper << "\n";
           DiffUpper = APInt(W, 0);
           FinalUpper = NewUpper;
         } else {
           // final lower = previous lower
-          llvm::outs() << "LHS is always <= PU " << PreviousUpper << "\n";
+          //llvm::outs() << "LHS is always <= PU " << PreviousUpper << "\n";
           DiffUpper = APInt(W, 0);
           FinalUpper = PreviousUpper;
         }
       }
       Range = llvm::ConstantRange(PreviousLower, FinalUpper);
-      llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+      //llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
       //iterate for lower bound only between prevlower and new lower
-      llvm::outs() << "Iterate for lower bound only\n\n";
+      //llvm::outs() << "Iterate for lower bound only\n\n";
       return searchLowerBound(BPCs, PCs, LHS, Range, PreviousLower, NewLower, IC);
     }
 
@@ -931,13 +931,13 @@ public:
    
     APInt Lower = Range.getLower();
     APInt Upper = Range.getUpper();
-    llvm::outs() << "START range() : Lower = " << Lower << ", Upper = " << Upper << "\n";
-    llvm::outs() << "Start prev low = " << PreviousLow << ", prev up = " << PreviousUp << "\n";
+    //llvm::outs() << "START range() : Lower = " << Lower << ", Upper = " << Upper << "\n";
+    //llvm::outs() << "Start prev low = " << PreviousLow << ", prev up = " << PreviousUp << "\n";
 
     bool IsGuessTrue;
     Inst *ZeroGuess = 0;
     if (Range.isFullSet()) {
-      llvm::outs() << "Full set testing --- w,r,t, 0\n";
+      //llvm::outs() << "Full set testing --- w,r,t, 0\n";
       ZeroGuess = IC.getInst(Inst::Slt, 1, {LHS, IC.getConst(APInt(W, 0))});
       InstMapping Mapping(ZeroGuess, True);
   
@@ -948,12 +948,12 @@ public:
   
       if (!IsGuessTrue) {
         // range is: MIN, 0
-        llvm::outs() << "x < 0\n";
+        //llvm::outs() << "x < 0\n";
         Range = llvm::ConstantRange(APInt::getSignedMinValue(W), APInt(W, 0));
-        llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+        //llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
         PreviousLow = APInt::getSignedMinValue(W);
         PreviousUp = APInt(W, 0);
-        llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
+        //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
       } else {
         // query SMT solver for x <= 0 and more cases
         ZeroGuess = IC.getInst(Inst::Sle, 1, {LHS, IC.getConst(APInt(W, 0))});
@@ -966,12 +966,12 @@ public:
   
         if (!IsGuessTrue) {
           // range is: MIN, 1
-          llvm::outs() << "x <= 0\n";
+          //llvm::outs() << "x <= 0\n";
           Range = llvm::ConstantRange(APInt::getSignedMinValue(W), APInt(W, 1));
-          llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+          //llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
           PreviousLow = APInt::getSignedMinValue(W);
           PreviousUp = APInt(W, 1);
-          llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
+          //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
         } else {
           // query SMT solver for x > 0 and more cases
           ZeroGuess = IC.getInst(Inst::Slt, 1, {IC.getConst(APInt(W, 0)), LHS});
@@ -984,12 +984,12 @@ public:
   
           if (!IsGuessTrue) {
             // range is: 1, MIN
-            llvm::outs() << "x > 0\n";
+            //llvm::outs() << "x > 0\n";
             Range = llvm::ConstantRange(APInt(W, 1), APInt::getSignedMinValue(W));
-            llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+            //llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
             PreviousLow = APInt(W, 1);
             PreviousUp = APInt::getSignedMinValue(W);
-            llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
+            //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
           } else {
             // query SMT solver for x >= 0 and more cases
             ZeroGuess = IC.getInst(Inst::Sle, 1, {IC.getConst(APInt(W, 0)), LHS});
@@ -1002,12 +1002,12 @@ public:
   
             if (!IsGuessTrue) {
               // range is: 0, MIN
-              llvm::outs() << "x >= 0\n";
+              //llvm::outs() << "x >= 0\n";
               Range = llvm::ConstantRange(APInt(W, 0), APInt::getSignedMinValue(W));
-              llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+              //llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
               PreviousLow = APInt(W, 0);
               PreviousUp = APInt::getSignedMinValue(W);
-              llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
+              //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
             } else {
               // verify another special case if x != 0
               ZeroGuess = IC.getInst(Inst::Ne, 1, {IC.getConst(APInt(W, 0)), LHS});
@@ -1020,12 +1020,12 @@ public:
   
               if (!IsGuessTrue) {
                 // range is: 1,0
-                llvm::outs() << "x != 0\n";
+                //llvm::outs() << "x != 0\n";
                 Range = llvm::ConstantRange(APInt(W, 1), APInt(W, 0));
-                llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+                //llvm::outs() << "** Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
                 PreviousLow = APInt(W, 1);
                 PreviousUp = APInt(W, 0);
-                llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
+                //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
               } else {
                 // Range is distributed in both negative and positive side
                 // Make it more specific later: TODO
@@ -1040,7 +1040,7 @@ public:
       }
     }
     
-    llvm::outs() << "Now TestRange() begins here for Low == " << Range.getLower() << ", Up = " << Range.getUpper() << "\n";
+    //llvm::outs() << "Now TestRange() begins here for Low == " << Range.getLower() << ", Up = " << Range.getUpper() << "\n";
     APInt Mid = APInt(W, 0);
     APInt LowerVal = Range.getLower();
     APInt UpperVal = Range.getUpper();
@@ -1059,11 +1059,11 @@ public:
       if (Range.getUpper().sgt(Range.getLower())) {
         // Lower s< upper
         Mid += Range.getLower();
-        llvm::outs() << "Mid = Lower = " << Mid << "\n";
+        //llvm::outs() << "Mid = Lower = " << Mid << "\n";
         Mid += Range.getUpper();
-        llvm::outs() << "Mid = Lower + Upper = " << Mid << "\n";
+        //llvm::outs() << "Mid = Lower + Upper = " << Mid << "\n";
         Mid = Mid.sdiv(APInt(W, 2));
-        llvm::outs() << "Gaurav Mid = " << Mid << "\n";
+        //llvm::outs() << "Mid = " << Mid << "\n";
       } else {
         // wrapped set (Lower is close to max, upper is close to min)
         APInt DistFromMax = APInt(W, 0);
@@ -1075,7 +1075,7 @@ public:
         TotalElementsInSet += DistFromMax.abs();
         Mid = TotalElementsInSet.sdiv(APInt(W, 2));
         Mid += Range.getLower();
-        llvm::outs() << "Mid = " << Mid << "\n";
+        //llvm::outs() << "Mid = " << Mid << "\n";
       }
       MidGuess = IC.getInst(Inst::Slt, 1, {LHS, IC.getConst(Mid)});
       InstMapping Mapping(MidGuess, True);
@@ -1090,7 +1090,7 @@ public:
         Range = llvm::ConstantRange(Range.getLower(), Mid);
         PreviousLow = Range.getLower();
         PreviousUp = Mid;
-        //TODO: check distance between range.lower and range.upper
+        //FIXME: IMP: TODO: check distance between range.lower and range.upper
         // if distance <=2 -> look for independent values or ranges in parts
         // return Range at the end
 
@@ -1100,7 +1100,8 @@ public:
         Diff = Diff.abs();
 
         if (Diff.ule(APInt(W, 2))) {
-          // FIXME: Check the exact value of upper bound <= or < previousUp or check with <= or < Mid value first?
+          // FIXME: IMP: TODO: Check the exact value of upper bound <= or < previousUp,
+          // or check with <= or < Mid value first?
           Range = llvm::ConstantRange(PreviousLow, PreviousUp);
         } else {
           return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
@@ -1129,7 +1130,7 @@ public:
           Diff = Diff.abs();
 
           if (Diff.ule(APInt(W, 2))) {
-            // FIXME: Check the exact value of upper bound <= or < previousUp or check with <= or < Mid value first?
+            // FIXME: IMP: TODO: Check the exact value of upper bound <= or < previousUp or check with <= or < Mid value first?
             Range = llvm::ConstantRange(PreviousLow, PreviousUp);
           } else {
             return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
@@ -1160,7 +1161,7 @@ public:
             Diff = Diff.abs();
 
             if (Diff.ule(APInt(W, 2))) {
-              // FIXME: Check the exact value of upper bound <= or < previousUp or check with <= or < Mid value first?
+              // FIXME: IMP: TODO: Check the exact value of upper bound <= or < previousUp or check with <= or < Mid value first?
               Range = llvm::ConstantRange(PreviousLow, PreviousUp);
             } else {
               return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
@@ -1187,7 +1188,7 @@ public:
               Diff = Diff.abs();
 
               if (Diff.ule(APInt(W, 2))) {
-                // FIXME: Check the exact value of upper bound <= or < previousUp or check with <= or < Mid value first?
+                // FIXME: IMP: TODO: Check the exact value of upper bound <= or < previousUp or check with <= or < Mid value first?
                 Range = llvm::ConstantRange(PreviousLow, PreviousUp);
               } else {
                 return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
@@ -1195,21 +1196,21 @@ public:
               //return range(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, IC);
             } else {
               // TODO: Is this correct?
-              llvm::outs() << "******* Jubi: More opportunities to optimize *******\n";
-              llvm::outs() << "Mid value failed at: " << Mid << "\n";
-              llvm::outs() << "Previous success range is: " << PreviousLow << ", " << PreviousUp << "\n";
+              //llvm::outs() << "******* Jubi: More opportunities to optimize *******\n";
+              //llvm::outs() << "Mid value failed at: " << Mid << "\n";
+              //llvm::outs() << "Previous success range is: " << PreviousLow << ", " << PreviousUp << "\n";
               APInt NewLowerMid = APInt(W, 0);
               NewLowerMid += PreviousLow;
               NewLowerMid += Mid;
               NewLowerMid = NewLowerMid.sdiv(APInt(W, 2));
-              llvm::outs() << "New lower mid partition is at: " << NewLowerMid << "\n";
+              //llvm::outs() << "New lower mid partition is at: " << NewLowerMid << "\n";
               APInt NewUpperMid = APInt(W, 0);
               NewUpperMid += PreviousUp;
               NewUpperMid += Mid;
               NewUpperMid = NewUpperMid.sdiv(APInt(W, 2));
-              llvm::outs() << "New upper mid partition is at: " << NewUpperMid << "\n";
-              llvm::outs() << "test mini ranges now\n";
-              llvm::outs() << "FIR SE LELO: Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
+              //llvm::outs() << "New upper mid partition is at: " << NewUpperMid << "\n";
+              //llvm::outs() << "test mini ranges now\n";
+              //llvm::outs() << "Range = " << Range.getLower() << ", " << Range.getUpper() << "\n";
               return moreRangeTest(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, NewLowerMid, NewUpperMid, IC);
               //Range = llvm::ConstantRange(PreviousLow, PreviousUp);
             }
@@ -1218,7 +1219,6 @@ public:
       }
     } else {
       // TODO: Deal with it more precisely later
-      //llvm::outs() << "Test range failed\n";
       Range = llvm::ConstantRange(PreviousLow, PreviousUp);
     }
 
