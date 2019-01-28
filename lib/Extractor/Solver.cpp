@@ -901,11 +901,16 @@ public:
     Inst *GuessLowerPart = IC.getInst(Inst::Ule, 1, {LowerVal, LHS});
     Inst *GuessUpperPart = IC.getInst(Inst::Ult, 1, {LHS, UpperVal});
     Inst *Guess = 0;
-    if (Lower.ugt(Upper)) { // wrapped set
-      Guess = IC.getInst(Inst::Or, 1, { GuessLowerPart, GuessUpperPart });
-    } else {
+    if (Upper.sgt(Lower)) { // U>L - not wrapped set
       Guess = IC.getInst(Inst::And, 1, { GuessLowerPart, GuessUpperPart });
+    } else {
+      Guess = IC.getInst(Inst::Or, 1, { GuessLowerPart, GuessUpperPart });
     }
+    //if (Lower.sgt(Upper)) { // wrapped set
+    //  Guess = IC.getInst(Inst::Or, 1, { GuessLowerPart, GuessUpperPart });
+    //} else {
+    //  Guess = IC.getInst(Inst::And, 1, { GuessLowerPart, GuessUpperPart });
+    //}
 
     APInt TrueGuess(1, 1, false);
     Inst *True = IC.getConst(TrueGuess);
@@ -1027,12 +1032,25 @@ public:
                 PreviousUp = APInt(W, 0);
                 //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
               } else {
-                // Range is distributed in both negative and positive side
-                // Make it more specific later: TODO
-                // currently, return previousLow, previousHigh
-                //llvm::outs() << "Nothing wrt 0 here, else case, we simply set range to prev low and prev up i.e. as--\n";
-                //llvm::outs() << "Low = PrevLow = " << PreviousLow << ", Up = PrevUp = " << PreviousUp << "\n";
                 Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+                // x is both on +ve and -ve side of the numberline
+                //APInt Low = APInt::getSignedMinValue(W);
+                //APInt Up = APInt::getSignedMaxValue(W);
+                //llvm::outs() << "In else case to test if Min to Max is working? with Low = " << Low << ", Up = " << Up << "\n";
+                //APInt M(W, 0);
+                //M = Up.sdiv(APInt(W, 2));
+                //llvm::outs() << "Temp. UpperM = " << M << "\n";
+                //if (testRange(BPCs, PCs, LHS, Low, Up, IC)) {
+                //  llvm::outs() << "test range passed for smin to smax\n";
+                //  PreviousLow = Low;
+                //  PreviousUp = Up;
+                //  Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+                //  APInt NewLowerMid = PreviousLow.sdiv(APInt(W, 2));
+                //  APInt NewUpperMid = PreviousUp.sdiv(APInt(W, 2));
+                //  return moreRangeTest(BPCs, PCs, LHS, Range, PreviousLow, PreviousUp, NewLowerMid, NewUpperMid, IC);
+                //} else {
+                //  Range = llvm::ConstantRange(PreviousLow, PreviousUp);
+                //}
               }
             }
           }
