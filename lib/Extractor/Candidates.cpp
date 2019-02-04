@@ -216,7 +216,7 @@ Inst *ExprBuilder::makeArrayRead(Value *V) {
       NumSignBits = ComputeNumSignBits(V, DL);
     }
 
-    if (PrintDemandedBits) {
+    if (PrintDemandedBitsAtReturn) {
       APInt DemandedBitsVal = APInt::getAllOnesValue(Width);
       if (Instruction *I = dyn_cast<Instruction>(V))
         DemandedBitsVal = DB->getDemandedBits(I);

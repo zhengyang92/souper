@@ -65,6 +65,9 @@ static cl::opt<bool> PrintSignBits("print-sign-bits", cl::init(false),
 static cl::opt<bool> PrintRange("print-range", cl::init(false),
     cl::desc("Print range (default=false)"));
 
+static cl::opt<bool> PrintDemandedBits("print-demanded-bits", cl::init(false),
+    cl::desc("Print demanded bits fact (default=false)"));
+
 static cl::opt<bool>
 Check("check", cl::desc("Check input for expected results"),
     cl::init(false));

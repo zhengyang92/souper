@@ -75,6 +75,11 @@ public:
                             Inst *LHS, llvm::ConstantRange &Range,
                             llvm::APInt &PrevLow, llvm::APInt &PrevUp,
                             InstContext &IC) = 0;
+  virtual
+  std::error_code testDemandedBits(const BlockPCs &BPCs,
+                                   const std::vector<InstMapping> &PCs,
+                                   Inst *LHS, llvm::APInt &DB,
+                                   InstContext &IC) = 0;
 };
 
 std::unique_ptr<Solver> createBaseSolver(
