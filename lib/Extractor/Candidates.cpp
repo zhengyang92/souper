@@ -83,6 +83,10 @@ static llvm::cl::opt<bool> PrintRangeAtReturn(
     "print-range-at-return",
     llvm::cl::desc("Print range inforation in each value returned from a function (default=false)"),
     llvm::cl::init(false));
+static llvm::cl::opt<bool> PrintDemandedBitsAtReturn(
+    "print-demanded-bits-at-return",
+    llvm::cl::desc("Print demanded bits (default=false)"),
+    llvm::cl::init(false));
 
 using namespace llvm;
 using namespace souper;
@@ -210,6 +214,13 @@ Inst *ExprBuilder::makeArrayRead(Value *V) {
       PowOfTwo = isKnownToBeAPowerOfTwo(V, DL);
       Negative = isKnownNegative(V, DL);
       NumSignBits = ComputeNumSignBits(V, DL);
+    }
+
+    if (PrintDemandedBits) {
+      APInt DemandedBitsVal = APInt::getAllOnesValue(Width);
+      if (Instruction *I = dyn_cast<Instruction>(V))
+        DemandedBitsVal = DB->getDemandedBits(I);
+      llvm::outs() << "known at return: " << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
     }
 
     ConstantRange Range = llvm::ConstantRange(Width, /*isFullSet=*/true);
