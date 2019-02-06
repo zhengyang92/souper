@@ -216,13 +216,13 @@ Inst *ExprBuilder::makeArrayRead(Value *V) {
       NumSignBits = ComputeNumSignBits(V, DL);
     }
 
-    if (PrintDemandedBitsAtReturn) {
-      APInt DemandedBitsVal = APInt::getAllOnesValue(Width);
-      if (Instruction *I = dyn_cast<Instruction>(V))
-        DemandedBitsVal = DB->getDemandedBits(I);
-      llvm::outs() << "known at return: " << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
-    }
-
+//    if (PrintDemandedBitsAtReturn) {
+//      APInt DemandedBitsVal = APInt::getAllOnesValue(Width);
+//      if (Instruction *I = dyn_cast<Instruction>(V))
+//        DemandedBitsVal = DB->getDemandedBits(I);
+//      llvm::outs() << "known at return: " << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
+//    }
+//
     ConstantRange Range = llvm::ConstantRange(Width, /*isFullSet=*/true);
     if (HarvestConstantRange && V->getType()->isIntegerTy()) {
       if (Instruction *I = dyn_cast<Instruction>(V)) {
@@ -934,6 +934,16 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
         llvm::outs() << "known at return: " << "[" << Range.getLower() << ","
                      << Range.getUpper() << ")" << "\n";
       }
+      if (PrintDemandedBitsAtReturn && isa<ReturnInst>(I)) {
+        auto V = I.getOperand(0);
+        auto DL = F.getParent()->getDataLayout();
+        unsigned Width = DL.getTypeSizeInBits(V->getType());
+        APInt DemandedBitsVal = APInt::getAllOnesValue(Width);
+        if (Instruction *IDB = dyn_cast<Instruction>(V))
+          DemandedBitsVal = DB->getDemandedBits(IDB);
+        llvm::outs() << "known at return: " << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
+      }
+
       if (!I.getType()->isIntegerTy())
         continue;
       if (I.hasNUses(0))
