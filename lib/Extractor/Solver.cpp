@@ -264,29 +264,84 @@ public:
     return std::error_code();
   }
 
+  Inst * traverse_to_find_var(Inst *root) {
+    llvm::outs() << "number of ops = " << root->Ops.size() << "\n";
+    if (root->K == Inst::Var) {
+      return root;
+    }
+    if (root->Ops.size() == 2) {
+      Inst *left = traverse_to_find_var(root->Ops[0]);
+      if (left->K == Inst::Var) {
+        return left;
+      }
+      Inst *right = traverse_to_find_var(root->Ops[1]);
+      if (right->K == Inst::Var) {
+        return right;
+      }
+    }
+  
+
+  bool testDB(const BlockPCs &BPCs,
+              const std::vector<InstMapping> &PCs,
+              Inst *LHS, Inst *Mask, Inst *VarInst,
+              InstContext &IC) {
+    unsigned W = LHS->Width;
+    APInt TrueGuess(1, 1, false);
+    Inst *True = IC.getConst(TrueGuess);
+    Inst *Guess = IC.getInst(Inst::Eq, 1, {VarInst, Mask});
+    InstMapping Mapping(Guess, True);
+    bool IsSat;
+    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
+    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+                                                  IsSat, 0, 0, Timeout);
+    if (EC)
+      llvm::report_fatal_error("stopping due to error");
+    return !IsSat;
+  }
+
+  llvm::APInt getClearedBit(unsigned Pos, unsigned W) {
+    APInt AllOnes = APInt::getAllOnesValue(W);
+    AllOnes.clearBit(Pos);
+    return AllOnes;
+  }
+
   std::error_code testDemandedBits(const BlockPCs &BPCs,
                               const std::vector<InstMapping> &PCs,
                               Inst *LHS, APInt &ResultDB,
                               InstContext &IC) override {
     unsigned W = LHS->Width;
-    APInt Ones = APInt::getNullValue(W);
+    llvm::outs() << "logging: testdb: LHS Kind = " << Inst::getKindName(LHS->K) << "\n";
+
+    Inst *IV = traverse_to_find_var(LHS);
+
     APInt Zeros = APInt::getNullValue(W);
     ResultDB = APInt::getNullValue(W);
 
-    for (unsigned I=0; I<W; I++) {
-      APInt ZeroGuess = Zeros | APInt::getOneBitSet(W, I);
-      if (testKnown(BPCs, PCs, ZeroGuess, Ones, LHS, IC)) {
-        Zeros = ZeroGuess;
-        ResultDB |= Zeros;
-        continue;
-      } else {
-        APInt OneGuess = Ones | APInt::getOneBitSet(W, I);
-        if (testKnown(BPCs, PCs, Zeros, OneGuess, LHS, IC)) {
-          Ones = OneGuess;
-          ResultDB |= Ones;
+    for (unsigned I=0; I<IV->Width; I++) {
+      APInt SetBit = Zeros | APInt::getOneBitSet(W, I);
+      Inst *IVOrSetBit = IC.getInst(Inst::Or, W, {IV, IC.getConst(SetBit)}); //xxxx || 0001
+
+      APInt AllOnes = APInt::getAllOnesValue(W); //1111
+      APInt ClearBit = getClearedBit(I, W); //1110
+      Inst *ClearMask = IC.getInst(Inst::And, W, {IV, IC.getConst(ClearBit)}); // xxxx && 1110
+      
+      if (testDB(BPCs, PCs, LHS, IVOrSetBit, IV, IC)) {
+        llvm::outs() << "first check: passed -> NDB\n";
+        if (testDB(BPCs, PCs, LHS, ClearMask, IV, IC)) {
+          llvm::outs() << "second check: passed -> NDB\n";
+          // not-demanded
+          ResultDB = ResultDB;
         } else {
+          // demanded
+           llvm::outs() << "second check: failed -> DB\n";
+          ResultDB |= SetBit;
           continue;
         }
+      } else {
+        // demanded
+        llvm::outs() << "first check: failed -> DB\n";
+        ResultDB |= SetBit;
+        continue;
       }
     }
     return std::error_code();
