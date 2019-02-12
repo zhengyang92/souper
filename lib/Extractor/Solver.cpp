@@ -264,39 +264,74 @@ public:
     return std::error_code();
   }
 
-  Inst * traverse_to_find_var(Inst *root) {
-    llvm::outs() << "number of ops = " << root->Ops.size() << "\n";
-    if (root->K == Inst::Var) {
-      return root;
-    }
-    if (root->Ops.size() == 2) {
-      Inst *left = traverse_to_find_var(root->Ops[0]);
-      if (left->K == Inst::Var) {
-        return left;
-      }
-      Inst *right = traverse_to_find_var(root->Ops[1]);
-      if (right->K == Inst::Var) {
-        return right;
-      }
-    }
-  
+  Inst * set_traverse_to_find_and_update_var(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx) {
+    Inst *root = node;
+    if (node->K == Inst::Var) {
+      llvm::outs() << "Set travserse : Var node\n";
+      unsigned VarWidth = node->Width;
+      APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
+      llvm::outs() << "************* SetBit = " << SetBit << "\n";
+      Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
+      node = SetMask;
+      prev->Ops[idx] = node;
 
+      return OrigLHS;
+    }
+    for (unsigned Op=0; Op<node->Ops.size(); ++Op) {
+      set_traverse_to_find_and_update_var(node->Ops[Op], OrigLHS, node, bitPos, IC, Op);
+    }
+
+    return OrigLHS;
+  }
+
+  void plain_traverse(Inst *LHS) {
+    if (!LHS) return;
+    llvm::outs() << "Kind = " << Inst::getKindName(LHS->K) << ", Value = " LHS->Value <<"\n";
+    for (auto Op: LHS->Ops) {
+      plain_traverse(Op);
+    }
+  }
+
+  Inst * clear_traverse_to_find_and_update_var(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx) {
+    Inst *root = node;
+    llvm::outs() << "CLEAR:    " << Inst::getKindName(node->K) << "\n";
+    if (node->K == Inst::Var) {
+      llvm::outs() << "clear travserse : Var node\n";
+      unsigned VarWidth = node->Width;
+
+      APInt AllOnes = APInt::getAllOnesValue(VarWidth); //1111
+      APInt ClearBit = getClearedBit(bitPos, VarWidth); //1110
+
+      llvm::outs() << "- - - - -- - - - - --  clear bit = " << ClearBit << "\n";
+      Inst *ClearMask = IC.getInst(Inst::And, VarWidth, {node, IC.getConst(ClearBit)}); // xxxx && ~(0001)
+      node = ClearMask;
+      prev->Ops[idx] = node;
+
+      return OrigLHS;
+    }
+    for (unsigned Op=0; Op<node->Ops.size(); ++Op) {
+      clear_traverse_to_find_and_update_var(node->Ops[Op], OrigLHS, node, bitPos, IC, Op);
+    }
+
+    return OrigLHS;
+  }
+  
   bool testDB(const BlockPCs &BPCs,
               const std::vector<InstMapping> &PCs,
-              Inst *LHS, Inst *Mask, Inst *VarInst,
+              Inst *LHS, Inst *NewLHS,
               InstContext &IC) {
     unsigned W = LHS->Width;
     APInt TrueGuess(1, 1, false);
     Inst *True = IC.getConst(TrueGuess);
-    Inst *Guess = IC.getInst(Inst::Eq, 1, {VarInst, Mask});
+    Inst *Guess = IC.getInst(Inst::Ne, 1, {LHS, NewLHS});
     InstMapping Mapping(Guess, True);
     bool IsSat;
-    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
-    std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
+    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
+    std::error_code EC = SMTSolver->isSatisfiable(Query,
                                                   IsSat, 0, 0, Timeout);
     if (EC)
       llvm::report_fatal_error("stopping due to error");
-    return !IsSat;
+    return IsSat;
   }
 
   llvm::APInt getClearedBit(unsigned Pos, unsigned W) {
@@ -312,38 +347,80 @@ public:
     unsigned W = LHS->Width;
     llvm::outs() << "logging: testdb: LHS Kind = " << Inst::getKindName(LHS->K) << "\n";
 
-    Inst *IV = traverse_to_find_var(LHS);
+    std::map<Inst *, Inst *> InstCache;
+    std::map<Block *, Block *> BlockCache;
+    Inst *CopyLHS = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
 
-    APInt Zeros = APInt::getNullValue(W);
     ResultDB = APInt::getNullValue(W);
 
-    for (unsigned I=0; I<IV->Width; I++) {
-      APInt SetBit = Zeros | APInt::getOneBitSet(W, I);
-      Inst *IVOrSetBit = IC.getInst(Inst::Or, W, {IV, IC.getConst(SetBit)}); //xxxx || 0001
+    llvm::outs() << "plain traversal of original lhs is: \n";
+    plain_traverse(LHS);
 
-      APInt AllOnes = APInt::getAllOnesValue(W); //1111
-      APInt ClearBit = getClearedBit(I, W); //1110
-      Inst *ClearMask = IC.getInst(Inst::And, W, {IV, IC.getConst(ClearBit)}); // xxxx && 1110
-      
-      if (testDB(BPCs, PCs, LHS, IVOrSetBit, IV, IC)) {
-        llvm::outs() << "first check: passed -> NDB\n";
-        if (testDB(BPCs, PCs, LHS, ClearMask, IV, IC)) {
-          llvm::outs() << "second check: passed -> NDB\n";
-          // not-demanded
-          ResultDB = ResultDB;
-        } else {
-          // demanded
-           llvm::outs() << "second check: failed -> DB\n";
-          ResultDB |= SetBit;
-          continue;
-        }
+    for (unsigned I=0; I<W; I++) {
+      llvm::outs() << "\n";
+      llvm::outs() << "For BIt =--====================    " << I << "   \n";
+
+      std::map<Inst *, Inst *> InstCache;
+      std::map<Block *, Block *> BlockCache;
+      Inst *OrigLHS1 = getInstCopy(CopyLHS, IC, InstCache, BlockCache, 0, true);
+      Inst *SetLHS = set_traverse_to_find_and_update_var(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0);
+
+      llvm::outs() << "Set traversal LHS is ==== \n";
+      plain_traverse(SetLHS);
+      llvm::outs() << "\n";
+
+      std::map<Inst *, Inst *> InstCache2;
+      std::map<Block *, Block *> BlockCache2;
+      Inst *OrigLHS2 = getInstCopy(CopyLHS, IC, InstCache2, BlockCache2, 0, true);
+
+      Inst *ClearLHS = clear_traverse_to_find_and_update_var(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0);
+
+      llvm::outs() << "Clear traversal LHS is ==== \n";
+      plain_traverse(ClearLHS);
+      llvm::outs() << "\n";
+
+
+      if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC) && testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
+        // not-demanded
+        llvm::outs() << "Bit = " << I << " = not-demanded\n";
+        ResultDB = ResultDB;
       } else {
         // demanded
-        llvm::outs() << "first check: failed -> DB\n";
-        ResultDB |= SetBit;
-        continue;
+        llvm::outs() << "Bit = " << I << " = demanded\n";
+        ResultDB |= APInt::getOneBitSet(W, I);
       }
     }
+
+//    APInt Zeros = APInt::getNullValue(W);
+//    ResultDB = APInt::getNullValue(W);
+//
+//    for (unsigned I=0; I<IV->Width; I++) {
+//      APInt SetBit = Zeros | APInt::getOneBitSet(W, I);
+//      Inst *IVOrSetBit = IC.getInst(Inst::Or, W, {IV, IC.getConst(SetBit)}); //xxxx || 0001
+//
+//      APInt AllOnes = APInt::getAllOnesValue(W); //1111
+//      APInt ClearBit = getClearedBit(I, W); //1110
+//      Inst *ClearMask = IC.getInst(Inst::And, W, {IV, IC.getConst(ClearBit)}); // xxxx && 1110
+//      
+//      if (testDB(BPCs, PCs, LHS, IVOrSetBit, IV, IC)) {
+//        llvm::outs() << "first check: passed -> NDB\n";
+//        if (testDB(BPCs, PCs, LHS, ClearMask, IV, IC)) {
+//          llvm::outs() << "second check: passed -> NDB\n";
+//          // not-demanded
+//          ResultDB = ResultDB;
+//        } else {
+//          // demanded
+//           llvm::outs() << "second check: failed -> DB\n";
+//          ResultDB |= SetBit;
+//          continue;
+//        }
+//      } else {
+//        // demanded
+//        llvm::outs() << "first check: failed -> DB\n";
+//        ResultDB |= SetBit;
+//        continue;
+//      }
+//    }
     return std::error_code();
   }
 
