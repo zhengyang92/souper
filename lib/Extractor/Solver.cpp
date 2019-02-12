@@ -286,7 +286,7 @@ public:
 
   void plain_traverse(Inst *LHS) {
     if (!LHS) return;
-    llvm::outs() << "Kind = " << Inst::getKindName(LHS->K) << ", Value = " LHS->Value <<"\n";
+    llvm::outs() << "Kind = " << Inst::getKindName(LHS->K) << ", Value = " << LHS->Val <<"\n";
     for (auto Op: LHS->Ops) {
       plain_traverse(Op);
     }
@@ -321,17 +321,14 @@ public:
               Inst *LHS, Inst *NewLHS,
               InstContext &IC) {
     unsigned W = LHS->Width;
-    APInt TrueGuess(1, 1, false);
-    Inst *True = IC.getConst(TrueGuess);
-    Inst *Guess = IC.getInst(Inst::Ne, 1, {LHS, NewLHS});
-    InstMapping Mapping(Guess, True);
+    InstMapping Mapping(LHS, NewLHS);
     bool IsSat;
-    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
+    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0, /*negate=*/ true);
     std::error_code EC = SMTSolver->isSatisfiable(Query,
                                                   IsSat, 0, 0, Timeout);
     if (EC)
       llvm::report_fatal_error("stopping due to error");
-    return IsSat;
+    return !IsSat;
   }
 
   llvm::APInt getClearedBit(unsigned Pos, unsigned W) {
