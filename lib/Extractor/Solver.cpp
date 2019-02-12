@@ -267,10 +267,8 @@ public:
   Inst * set_traverse_to_find_and_update_var(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx) {
     Inst *root = node;
     if (node->K == Inst::Var) {
-      llvm::outs() << "Set travserse : Var node\n";
       unsigned VarWidth = node->Width;
       APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
-      llvm::outs() << "************* SetBit = " << SetBit << "\n";
       Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
       node = SetMask;
       prev->Ops[idx] = node;
@@ -294,15 +292,12 @@ public:
 
   Inst * clear_traverse_to_find_and_update_var(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx) {
     Inst *root = node;
-    llvm::outs() << "CLEAR:    " << Inst::getKindName(node->K) << "\n";
     if (node->K == Inst::Var) {
-      llvm::outs() << "clear travserse : Var node\n";
       unsigned VarWidth = node->Width;
 
       APInt AllOnes = APInt::getAllOnesValue(VarWidth); //1111
       APInt ClearBit = getClearedBit(bitPos, VarWidth); //1110
 
-      llvm::outs() << "- - - - -- - - - - --  clear bit = " << ClearBit << "\n";
       Inst *ClearMask = IC.getInst(Inst::And, VarWidth, {node, IC.getConst(ClearBit)}); // xxxx && ~(0001)
       node = ClearMask;
       prev->Ops[idx] = node;
@@ -342,40 +337,24 @@ public:
                               Inst *LHS, APInt &ResultDB,
                               InstContext &IC) override {
     unsigned W = LHS->Width;
-    llvm::outs() << "logging: testdb: LHS Kind = " << Inst::getKindName(LHS->K) << "\n";
-
     std::map<Inst *, Inst *> InstCache;
     std::map<Block *, Block *> BlockCache;
     Inst *CopyLHS = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
 
     ResultDB = APInt::getNullValue(W);
 
-    llvm::outs() << "plain traversal of original lhs is: \n";
-    plain_traverse(LHS);
-
     for (unsigned I=0; I<W; I++) {
-      llvm::outs() << "\n";
-      llvm::outs() << "For BIt =--====================    " << I << "   \n";
 
       std::map<Inst *, Inst *> InstCache;
       std::map<Block *, Block *> BlockCache;
       Inst *OrigLHS1 = getInstCopy(CopyLHS, IC, InstCache, BlockCache, 0, true);
       Inst *SetLHS = set_traverse_to_find_and_update_var(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0);
 
-      llvm::outs() << "Set traversal LHS is ==== \n";
-      plain_traverse(SetLHS);
-      llvm::outs() << "\n";
-
       std::map<Inst *, Inst *> InstCache2;
       std::map<Block *, Block *> BlockCache2;
       Inst *OrigLHS2 = getInstCopy(CopyLHS, IC, InstCache2, BlockCache2, 0, true);
 
       Inst *ClearLHS = clear_traverse_to_find_and_update_var(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0);
-
-      llvm::outs() << "Clear traversal LHS is ==== \n";
-      plain_traverse(ClearLHS);
-      llvm::outs() << "\n";
-
 
       if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC) && testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
         // not-demanded
@@ -387,37 +366,6 @@ public:
         ResultDB |= APInt::getOneBitSet(W, I);
       }
     }
-
-//    APInt Zeros = APInt::getNullValue(W);
-//    ResultDB = APInt::getNullValue(W);
-//
-//    for (unsigned I=0; I<IV->Width; I++) {
-//      APInt SetBit = Zeros | APInt::getOneBitSet(W, I);
-//      Inst *IVOrSetBit = IC.getInst(Inst::Or, W, {IV, IC.getConst(SetBit)}); //xxxx || 0001
-//
-//      APInt AllOnes = APInt::getAllOnesValue(W); //1111
-//      APInt ClearBit = getClearedBit(I, W); //1110
-//      Inst *ClearMask = IC.getInst(Inst::And, W, {IV, IC.getConst(ClearBit)}); // xxxx && 1110
-//      
-//      if (testDB(BPCs, PCs, LHS, IVOrSetBit, IV, IC)) {
-//        llvm::outs() << "first check: passed -> NDB\n";
-//        if (testDB(BPCs, PCs, LHS, ClearMask, IV, IC)) {
-//          llvm::outs() << "second check: passed -> NDB\n";
-//          // not-demanded
-//          ResultDB = ResultDB;
-//        } else {
-//          // demanded
-//           llvm::outs() << "second check: failed -> DB\n";
-//          ResultDB |= SetBit;
-//          continue;
-//        }
-//      } else {
-//        // demanded
-//        llvm::outs() << "first check: failed -> DB\n";
-//        ResultDB |= SetBit;
-//        continue;
-//      }
-//    }
     return std::error_code();
   }
 
