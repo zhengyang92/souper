@@ -267,9 +267,14 @@ public:
   Inst * set_traverse_to_find_and_update_var(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx) {
     Inst *root = node;
     if (node->K == Inst::Var) {
+      llvm::outs() << "** found var in set_traversal **\n";
       unsigned VarWidth = node->Width;
       APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
       Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
+     
+      llvm::outs() << "- - - - - - plain traverse set mask only ---\n"; 
+      plain_traverse(SetMask);
+
       node = SetMask;
       prev->Ops[idx] = node;
 
@@ -299,6 +304,10 @@ public:
       APInt ClearBit = getClearedBit(bitPos, VarWidth); //1110
 
       Inst *ClearMask = IC.getInst(Inst::And, VarWidth, {node, IC.getConst(ClearBit)}); // xxxx && ~(0001)
+
+      llvm::outs() << "~~~~~~~ plain traverse just clear mask: \n";
+      plain_traverse(ClearMask);
+
       node = ClearMask;
       prev->Ops[idx] = node;
 
@@ -316,13 +325,21 @@ public:
               Inst *LHS, Inst *NewLHS,
               InstContext &IC) {
     unsigned W = LHS->Width;
+//    Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, NewLHS});
+//    APInt TrueGuess(1, 1, false);
+//    Inst *True = IC.getConst(TrueGuess);
+//    InstMapping Mapping(Ne, True);
+    
     InstMapping Mapping(LHS, NewLHS);
     bool IsSat;
-    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0, /*negate=*/ true);
+//    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
+    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0, true);
+    llvm::outs() << "==== Query ==== \n" << Query << "\n";
     std::error_code EC = SMTSolver->isSatisfiable(Query,
                                                   IsSat, 0, 0, Timeout);
     if (EC)
       llvm::report_fatal_error("stopping due to error");
+    llvm::outs() << "Result of testDB = " << IsSat << "\n";
     return !IsSat;
   }
 
@@ -344,17 +361,22 @@ public:
     ResultDB = APInt::getNullValue(W);
 
     for (unsigned I=0; I<W; I++) {
-
+      llvm::outs() << "=================== Bit = " << I << " ============\n";
       std::map<Inst *, Inst *> InstCache;
       std::map<Block *, Block *> BlockCache;
       Inst *OrigLHS1 = getInstCopy(CopyLHS, IC, InstCache, BlockCache, 0, true);
       Inst *SetLHS = set_traverse_to_find_and_update_var(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0);
+
+      llvm::outs() << "------- Set traversal tree is:\n";
+      plain_traverse(SetLHS);
 
       std::map<Inst *, Inst *> InstCache2;
       std::map<Block *, Block *> BlockCache2;
       Inst *OrigLHS2 = getInstCopy(CopyLHS, IC, InstCache2, BlockCache2, 0, true);
 
       Inst *ClearLHS = clear_traverse_to_find_and_update_var(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0);
+      llvm::outs() << "******* Clear traversal tree is:\n";
+      plain_traverse(ClearLHS);
 
       if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC) && testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
         // not-demanded
