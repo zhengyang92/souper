@@ -370,62 +370,96 @@ public:
                               Inst *LHS, APInt &ResultDB,
                               InstContext &IC) override {
     unsigned W = LHS->Width;
-    std::map<Inst *, Inst *> InstCache;
-    std::map<Block *, Block *> BlockCache;
-    Inst *CopyLHS = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
-
     ResultDB = APInt::getNullValue(W);
 
-    for (unsigned I=0; I<W; I++) {
-      llvm::outs() << "=================== Bit = " << I << " ============\n";
-      std::map<Inst *, Inst *> InstCache;
-      std::map<Block *, Block *> BlockCache;
-      Inst *OrigLHS1 = getInstCopy(CopyLHS, IC, InstCache, BlockCache, 0, true);
-      bool sfound = false;
-      Inst *SetLHS = set_traverse_to_find_and_update_var(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0, sfound);
+    std::map<Inst *, Inst *> InstCache;
+    std::map<Block *, Block *> BlockCache;
+    Inst *CopyLHS = getInstCopy(LHS, IC, InstCache, BlockCache, 0, false);
 
-      llvm::outs() << "------- Set traversal tree is:\n";
-      plain_traverse(SetLHS);
+    // LHS != CopyLHS
+    Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, CopyLHS});
+    Inst *Ante = IC.getConst(APInt(1, true));
+    Ante = IC.getInst(Inst::And, 1, {Ante, Ne});
 
-      std::map<Inst *, Inst *> InstCache2;
-      std::map<Block *, Block *> BlockCache2;
-      Inst *OrigLHS2 = getInstCopy(CopyLHS, IC, InstCache2, BlockCache2, 0, true);
+    // LHS != CopyLHS == true
+    InstMapping Mapping(Ante, IC.getConst(APInt(1, true)));
 
-      bool cfound = false;
-      Inst *ClearLHS = clear_traverse_to_find_and_update_var(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
-      llvm::outs() << "******* Clear traversal tree is:\n";
-      plain_traverse(ClearLHS);
+    //std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0, /*Negate=*/true);
+    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
+    if (Query.empty())
+      return std::make_error_code(std::errc::value_too_large);
+    bool IsSat;
+    std::error_code EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
+    if (EC)
+      llvm::report_fatal_error("stopping due to error");
 
-      if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC)) {
-        // not-demanded
-        llvm::outs() << "set: Bit = " << I << " = not-demanded\n";
-        ResultDB = ResultDB;
-      } else {
-        // demanded
-        llvm::outs() << "set: Bit = " << I << " = demanded\n";
-        ResultDB |= APInt::getOneBitSet(W, I);
-      }
-      if (testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
-        // not-demanded
-        llvm::outs() << "clear: Bit = " << I << " = not-demanded\n";
-        ResultDB = ResultDB;
-      } else {
-        // demanded
-        llvm::outs() << "clear: Bit = " << I << " = demanded\n";
-        ResultDB |= APInt::getOneBitSet(W, I);
-      }
-//      if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC) && testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
-//        // not-demanded
-//        llvm::outs() << "Bit = " << I << " = not-demanded\n";
-//        ResultDB = ResultDB;
-//      } else {
-//        // demanded
-//        llvm::outs() << "Bit = " << I << " = demanded\n";
-//        ResultDB |= APInt::getOneBitSet(W, I);
-//      }
-    }
+    llvm::outs() << "Query =======\n" << Query << "\n";
+    llvm::outs() << "IsSat ====  " << IsSat << "\n";
+
     return std::error_code();
   }
+
+///  std::error_code testDemandedBits(const BlockPCs &BPCs,
+///                              const std::vector<InstMapping> &PCs,
+///                              Inst *LHS, APInt &ResultDB,
+///                              InstContext &IC) override {
+///    unsigned W = LHS->Width;
+///    std::map<Inst *, Inst *> InstCache;
+///    std::map<Block *, Block *> BlockCache;
+///    Inst *CopyLHS = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
+///
+///    ResultDB = APInt::getNullValue(W);
+///
+///    for (unsigned I=0; I<W; I++) {
+///      llvm::outs() << "=================== Bit = " << I << " ============\n";
+///      std::map<Inst *, Inst *> InstCache;
+///      std::map<Block *, Block *> BlockCache;
+///      Inst *OrigLHS1 = getInstCopy(CopyLHS, IC, InstCache, BlockCache, 0, true);
+///      bool sfound = false;
+///      Inst *SetLHS = set_traverse_to_find_and_update_var(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0, sfound);
+///
+///      llvm::outs() << "------- Set traversal tree is:\n";
+///      plain_traverse(SetLHS);
+///
+///      std::map<Inst *, Inst *> InstCache2;
+///      std::map<Block *, Block *> BlockCache2;
+///      Inst *OrigLHS2 = getInstCopy(CopyLHS, IC, InstCache2, BlockCache2, 0, true);
+///
+///      bool cfound = false;
+///      Inst *ClearLHS = clear_traverse_to_find_and_update_var(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
+///      llvm::outs() << "******* Clear traversal tree is:\n";
+///      plain_traverse(ClearLHS);
+///
+///      if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC)) {
+///        // not-demanded
+///        llvm::outs() << "set: Bit = " << I << " = not-demanded\n";
+///        ResultDB = ResultDB;
+///      } else {
+///        // demanded
+///        llvm::outs() << "set: Bit = " << I << " = demanded\n";
+///        ResultDB |= APInt::getOneBitSet(W, I);
+///      }
+///      if (testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
+///        // not-demanded
+///        llvm::outs() << "clear: Bit = " << I << " = not-demanded\n";
+///        ResultDB = ResultDB;
+///      } else {
+///        // demanded
+///        llvm::outs() << "clear: Bit = " << I << " = demanded\n";
+///        ResultDB |= APInt::getOneBitSet(W, I);
+///      }
+/////      if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC) && testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
+/////        // not-demanded
+/////        llvm::outs() << "Bit = " << I << " = not-demanded\n";
+/////        ResultDB = ResultDB;
+/////      } else {
+/////        // demanded
+/////        llvm::outs() << "Bit = " << I << " = demanded\n";
+/////        ResultDB |= APInt::getOneBitSet(W, I);
+/////      }
+///    }
+///    return std::error_code();
+///  }
 
 //  std::error_code range(const BlockPCs &BPCs,
 //                              const std::vector<InstMapping> &PCs,
