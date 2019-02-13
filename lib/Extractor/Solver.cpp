@@ -264,9 +264,12 @@ public:
     return std::error_code();
   }
 
-  Inst * set_traverse_to_find_and_update_var(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx) {
+  Inst * set_traverse_to_find_and_update_var(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx, bool &found) {
     Inst *root = node;
+    llvm::outs() << "***** current = " << Inst::getKindName(node->K) << ", prev = " << Inst::getKindName(prev->K) << "\n";
+
     if (node->K == Inst::Var) {
+      found = true;
       llvm::outs() << "** found var in set_traversal **\n";
       unsigned VarWidth = node->Width;
       APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
@@ -275,13 +278,16 @@ public:
       llvm::outs() << "- - - - - - plain traverse set mask only ---\n"; 
       plain_traverse(SetMask);
 
-      node = SetMask;
-      prev->Ops[idx] = node;
+//      node = SetMask;
+//      prev->Ops[idx] = node;
+      prev->Ops[idx] = SetMask;
 
       return OrigLHS;
     }
     for (unsigned Op=0; Op<node->Ops.size(); ++Op) {
-      set_traverse_to_find_and_update_var(node->Ops[Op], OrigLHS, node, bitPos, IC, Op);
+      set_traverse_to_find_and_update_var(node->Ops[Op], OrigLHS, node, bitPos, IC, Op, found);
+      if (found)
+        break;
     }
 
     return OrigLHS;
@@ -290,12 +296,14 @@ public:
   void plain_traverse(Inst *LHS) {
     if (!LHS) return;
     llvm::outs() << "Kind = " << Inst::getKindName(LHS->K) << ", Value = " << LHS->Val <<"\n";
-    for (auto Op: LHS->Ops) {
-      plain_traverse(Op);
+    //for (auto Op: LHS->Ops) {
+      //plain_traverse(Op);
+    for (unsigned Op = 0; Op < LHS->Ops.size(); ++Op) {
+      plain_traverse(LHS->Ops[Op]);
     }
   }
 
-  Inst * clear_traverse_to_find_and_update_var(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx) {
+  Inst * clear_traverse_to_find_and_update_var(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx, bool &found) {
     Inst *root = node;
     if (node->K == Inst::Var) {
       unsigned VarWidth = node->Width;
@@ -308,13 +316,15 @@ public:
       llvm::outs() << "~~~~~~~ plain traverse just clear mask: \n";
       plain_traverse(ClearMask);
 
-      node = ClearMask;
-      prev->Ops[idx] = node;
+//      node = ClearMask;
+//      prev->Ops[idx] = node;
+      prev->Ops[idx] = ClearMask;
 
       return OrigLHS;
     }
     for (unsigned Op=0; Op<node->Ops.size(); ++Op) {
-      clear_traverse_to_find_and_update_var(node->Ops[Op], OrigLHS, node, bitPos, IC, Op);
+      clear_traverse_to_find_and_update_var(node->Ops[Op], OrigLHS, node, bitPos, IC, Op, found);
+      if (found) break;
     }
 
     return OrigLHS;
@@ -330,6 +340,12 @@ public:
 //    Inst *True = IC.getConst(TrueGuess);
 //    InstMapping Mapping(Ne, True);
     
+    llvm::outs() << "- - - -- - - - Original Tree is - - - - - - \n";
+    plain_traverse(LHS);
+    llvm::outs() << "- - - -- - - - New Tree is - - - - - - \n";
+    plain_traverse(NewLHS);
+
+
     InstMapping Mapping(LHS, NewLHS);
     bool IsSat;
 //    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
@@ -365,7 +381,8 @@ public:
       std::map<Inst *, Inst *> InstCache;
       std::map<Block *, Block *> BlockCache;
       Inst *OrigLHS1 = getInstCopy(CopyLHS, IC, InstCache, BlockCache, 0, true);
-      Inst *SetLHS = set_traverse_to_find_and_update_var(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0);
+      bool sfound = false;
+      Inst *SetLHS = set_traverse_to_find_and_update_var(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0, sfound);
 
       llvm::outs() << "------- Set traversal tree is:\n";
       plain_traverse(SetLHS);
@@ -374,19 +391,38 @@ public:
       std::map<Block *, Block *> BlockCache2;
       Inst *OrigLHS2 = getInstCopy(CopyLHS, IC, InstCache2, BlockCache2, 0, true);
 
-      Inst *ClearLHS = clear_traverse_to_find_and_update_var(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0);
+      bool cfound = false;
+      Inst *ClearLHS = clear_traverse_to_find_and_update_var(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
       llvm::outs() << "******* Clear traversal tree is:\n";
       plain_traverse(ClearLHS);
 
-      if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC) && testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
+      if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC)) {
         // not-demanded
-        llvm::outs() << "Bit = " << I << " = not-demanded\n";
+        llvm::outs() << "set: Bit = " << I << " = not-demanded\n";
         ResultDB = ResultDB;
       } else {
         // demanded
-        llvm::outs() << "Bit = " << I << " = demanded\n";
+        llvm::outs() << "set: Bit = " << I << " = demanded\n";
         ResultDB |= APInt::getOneBitSet(W, I);
       }
+      if (testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
+        // not-demanded
+        llvm::outs() << "clear: Bit = " << I << " = not-demanded\n";
+        ResultDB = ResultDB;
+      } else {
+        // demanded
+        llvm::outs() << "clear: Bit = " << I << " = demanded\n";
+        ResultDB |= APInt::getOneBitSet(W, I);
+      }
+//      if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC) && testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
+//        // not-demanded
+//        llvm::outs() << "Bit = " << I << " = not-demanded\n";
+//        ResultDB = ResultDB;
+//      } else {
+//        // demanded
+//        llvm::outs() << "Bit = " << I << " = demanded\n";
+//        ResultDB |= APInt::getOneBitSet(W, I);
+//      }
     }
     return std::error_code();
   }
