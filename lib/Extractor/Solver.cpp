@@ -330,15 +330,18 @@ public:
     return OrigLHS;
   }
   
+  // modified testDB w.r.t. InferNop bigquery logic
   bool testDB(const BlockPCs &BPCs,
               const std::vector<InstMapping> &PCs,
               Inst *LHS, Inst *NewLHS,
               InstContext &IC) {
     unsigned W = LHS->Width;
-//    Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, NewLHS});
-//    APInt TrueGuess(1, 1, false);
-//    Inst *True = IC.getConst(TrueGuess);
-//    InstMapping Mapping(Ne, True);
+    Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, NewLHS});
+    Inst *Ante = IC.getConst(APInt(1, 1));
+    Ante = IC.getInst(Inst::And, 1, {Ante, Ne});
+    APInt TrueGuess(1, 1, false);
+    Inst *True = IC.getConst(TrueGuess);
+    InstMapping Mapping(Ante, True);
     
     llvm::outs() << "- - - -- - - - Original Tree is - - - - - - \n";
     plain_traverse(LHS);
@@ -346,7 +349,7 @@ public:
     plain_traverse(NewLHS);
 
 
-    InstMapping Mapping(LHS, NewLHS);
+    //InstMapping Mapping(LHS, NewLHS);
     bool IsSat;
 //    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
     std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0, true);
@@ -355,7 +358,7 @@ public:
                                                   IsSat, 0, 0, Timeout);
     if (EC)
       llvm::report_fatal_error("stopping due to error");
-    llvm::outs() << "Result of testDB = " << IsSat << "\n";
+    llvm::outs() << "Result of testDB IsSat = " << IsSat << "\n";
     return !IsSat;
   }
 
@@ -372,32 +375,107 @@ public:
     unsigned W = LHS->Width;
     ResultDB = APInt::getNullValue(W);
 
-    std::map<Inst *, Inst *> InstCache;
-    std::map<Block *, Block *> BlockCache;
-    Inst *CopyLHS = getInstCopy(LHS, IC, InstCache, BlockCache, 0, false);
+    // manually construct LHS = yy * 4
+    Inst *V = IC.createVar(W, "yy");
+    LHS = IC.getInst(Inst::Shl, W, {V, IC.getConst(APInt(W, 1))});
 
-    // LHS != CopyLHS
-    Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, CopyLHS});
-    Inst *Ante = IC.getConst(APInt(1, true));
-    Ante = IC.getInst(Inst::And, 1, {Ante, Ne});
+    // loop for each bit to create a constant for setting and clearing bit in Var
+    for (unsigned I=0; I<W; ++I) {
+      APInt SetBit = APInt::getOneBitSet(W, I);
+      Inst *VarOrConst = IC.getInst(Inst::Or, W, {V, IC.getConst(SetBit)});
+      Inst *NewLHS = IC.getInst(Inst::Shl, W, {VarOrConst, IC.getConst(APInt(W, 1))});
 
-    // LHS != CopyLHS == true
-    InstMapping Mapping(Ante, IC.getConst(APInt(1, true)));
+      ///std::map<Inst *, Inst *> InstCache;
+      ///std::map<Block *, Block *> BlockCache;
 
-    //std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0, /*Negate=*/true);
-    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
-    if (Query.empty())
-      return std::make_error_code(std::errc::value_too_large);
-    bool IsSat;
-    std::error_code EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
-    if (EC)
-      llvm::report_fatal_error("stopping due to error");
+      // comparing original LHS to copy of LHS does not work
+      //Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, getInstCopy(LHS, IC, InstCache, BlockCache, 0, true)});
 
-    llvm::outs() << "Query =======\n" << Query << "\n";
-    llvm::outs() << "IsSat ====  " << IsSat << "\n";
+      // copy to copy comparison works
+      //Inst *Ne = IC.getInst(Inst::Ne, 1, {getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+      //                                    getInstCopy(LHS, IC, InstCache, BlockCache, 0, true)});
+
+      Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, NewLHS});
+
+      Inst *Ante = IC.getConst(APInt(1, true));
+      Ante = IC.getInst(Inst::And, 1, {Ante, Ne});
+
+      InstMapping Mapping(Ante, IC.getConst(APInt(1, true)));
+
+      std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0, /*Negate=*/true);
+
+      if (Query.empty())
+        return std::make_error_code(std::errc::value_too_large);
+      bool IsSat;
+      std::error_code EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
+      if (EC)
+        llvm::report_fatal_error("stopping due to error");
+
+      llvm::outs() << "Query =======\n" << Query << "\n";
+      llvm::outs() << "IsSat ====  " << IsSat << "\n";
+
+      if (!IsSat) {
+        // not demanded
+        llvm::outs() << "Bit " << I << " : not-demanded\n";
+      } else {
+        // demanded
+        llvm::outs() << "Bit " << I << " : demanded\n";
+      }
+    }
 
     return std::error_code();
   }
+
+
+  // this version has all copies passed -- this is wrong creates big trees all the time for original LHS too
+///  std::error_code testDemandedBits(const BlockPCs &BPCs,
+///                              const std::vector<InstMapping> &PCs,
+///                              Inst *LHS, APInt &ResultDB,
+///                              InstContext &IC) override {
+///    unsigned W = LHS->Width;
+///    std::map<Inst *, Inst *> InstCache;
+///    std::map<Block *, Block *> BlockCache;
+/////    Inst *CopyLHS = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
+///
+///    ResultDB = APInt::getNullValue(W);
+///
+///    for (unsigned I=0; I<W; I++) {
+///
+///      bool sfound = false;
+/// //     Inst *SetLHS = set_traverse_to_find_and_update_var(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0, sfound);
+///
+///      bool cfound = false;
+/////      Inst *ClearLHS = clear_traverse_to_find_and_update_var(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
+///
+///      if (testDB(BPCs, PCs, getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+///          set_traverse_to_find_and_update_var(getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+///                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+///                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+///                                              I, IC, 0, sfound), IC)) {
+///        // not-demanded
+///        llvm::outs() << "set: Bit = " << I << " = not-demanded\n";
+///        ResultDB = ResultDB;
+///      } else {
+///        // demanded
+///        llvm::outs() << "set: Bit = " << I << " = demanded\n";
+///        ResultDB |= APInt::getOneBitSet(W, I);
+///      }
+///      if (testDB(BPCs, PCs, getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+///          clear_traverse_to_find_and_update_var(getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+///                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+///                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+///                                              I, IC, 0, sfound), IC)) {
+///        // not-demanded
+///        llvm::outs() << "clear: Bit = " << I << " = not-demanded\n";
+///        ResultDB = ResultDB;
+///      } else {
+///        // demanded
+///        llvm::outs() << "clear: Bit = " << I << " = demanded\n";
+///        ResultDB |= APInt::getOneBitSet(W, I);
+///      }
+///    }
+///    return std::error_code();
+///  }
 
 ///  std::error_code testDemandedBits(const BlockPCs &BPCs,
 ///                              const std::vector<InstMapping> &PCs,
