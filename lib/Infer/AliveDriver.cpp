@@ -70,7 +70,7 @@ public:
   template <typename T>
   void assume(T &&V) {
     auto AI = std::make_unique<IR::Assume>(*std::move(V));
-    F.getBB("").addIntr(std::move(AI));
+    F.getBB("").addInstr(std::move(AI));
   }
 
   template <typename A>
@@ -87,7 +87,7 @@ private:
   template <typename T>
   IR::Value *append(T &&p) {
     auto ptr = p.get();
-    F.getBB("").addIntr(std::move(p));
+    F.getBB("").addInstr(std::move(p));
     return ptr;
   }
 
@@ -353,29 +353,43 @@ bool souper::AliveDriver::translateAndCache(const souper::Inst *I,
       return true;                                               \
     }
 
-    #define BINOPW(SOUPER, ALIVE, W) case souper::Inst::SOUPER: {\
+    #define BINOPF(SOUPER, ALIVE, W) case souper::Inst::SOUPER: {\
       ExprCache[I] = Builder.binOp(t, Name, ExprCache[I->Ops[0]],\
       ExprCache[I->Ops[1]], IR::BinOp::ALIVE, IR::BinOp::W);     \
       return true;                                               \
     }
 
     BINOP(Add, Add);
-    BINOPW(AddNSW, Add, NSW);
-    BINOPW(AddNUW, Add, NUW);
+    BINOPF(AddNSW, Add, NSW);
+    BINOPF(AddNUW, Add, NUW);
+    BINOPF(AddNW, Add, NSWNUW);
     BINOP(Sub, Sub);
-    BINOPW(SubNSW, Sub, NSW);
-    BINOPW(SubNUW, Sub, NUW);
+    BINOPF(SubNSW, Sub, NSW);
+    BINOPF(SubNUW, Sub, NUW);
+    BINOPF(SubNW, Sub, NSWNUW);
     BINOP(Mul, Mul);
+    BINOPF(MulNSW, Mul, NSW);
+    BINOPF(MulNUW, Mul, NUW);
+    BINOPF(MulNW, Mul, NSWNUW);
     BINOP(And, And);
     BINOP(Or, Or);
     BINOP(Xor, Xor);
     BINOP(Shl, Shl);
-    BINOPW(ShlNSW, Shl, NSW);
-    BINOPW(ShlNUW, Shl, NUW);
+    BINOPF(ShlNSW, Shl, NSW);
+    BINOPF(ShlNUW, Shl, NUW);
+    BINOPF(ShlNW, Shl, NSWNUW);
     BINOP(LShr, LShr);
+    BINOPF(LShrExact, LShr, Exact);
     BINOP(AShr, AShr);
+    BINOPF(AShrExact, AShr, Exact);
     BINOP(Cttz, Cttz);
     BINOP(Ctlz, Ctlz);
+    BINOP(URem, URem);
+    BINOP(SRem, SRem);
+    BINOP(UDiv, UDiv);
+    BINOPF(UDivExact, UDiv, Exact);
+    BINOP(SDiv, SDiv);
+    BINOPF(SDivExact, SDiv, Exact);
 
     #define ICMP(SOUPER, ALIVE) case souper::Inst::SOUPER: {     \
       ExprCache[I] = Builder.iCmp(t, Name, IR::ICmp::ALIVE,      \
@@ -407,6 +421,7 @@ bool souper::AliveDriver::translateAndCache(const souper::Inst *I,
     }
 
     UNARYOP(CtPop, Ctpop);
+    UNARYOP(BSwap, BSwap);
 
     default:{
       llvm::outs() << "Unsupported Instruction Kind : " << I->getKindName(I->K) << "\n";
@@ -420,4 +435,16 @@ IR::Type &souper::AliveDriver::getType(int n) {
     TypeCache[n] = new IR::IntType("i" + std::to_string(n), n);
   }
   return *TypeCache[n];
+}
+
+bool souper::isTransformationValid(souper::Inst* LHS, souper::Inst* RHS,
+                                   const std::vector<InstMapping> &PCs,
+                                   InstContext &IC) {
+  Inst *Ante = IC.getConst(llvm::APInt(1, true));
+  for (auto PC : PCs ) {
+    Inst *Eq = IC.getInst(Inst::Eq, 1, {PC.LHS, PC.RHS});
+    Ante = IC.getInst(Inst::And, 1, {Ante, Eq});
+  }
+  AliveDriver Verifier(LHS, Ante);
+  return Verifier.verify(RHS);
 }
