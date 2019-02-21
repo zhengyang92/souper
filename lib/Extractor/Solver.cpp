@@ -258,12 +258,16 @@ public:
     ResultDB = APInt::getNullValue(W);
 
     for (unsigned I=0; I<W; I++) {
-      Inst *OrigLHS1 = getInstCopy(CopyLHS, IC, InstCache, BlockCache, 0, true);
+      std::map<Inst *, Inst *> InstCache1;
+      std::map<Block *, Block *> BlockCache1;
+      Inst *OrigLHS1 = getInstCopy(CopyLHS, IC, InstCache1, BlockCache1, 0, true);
 
       bool sfound = false;
       Inst *SetLHS = set_traverse(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0, sfound);
 
-      Inst *OrigLHS2 = getInstCopy(CopyLHS, IC, InstCache, BlockCache, 0, true);
+      std::map<Inst *, Inst *> InstCache2;
+      std::map<Block *, Block *> BlockCache2;
+      Inst *OrigLHS2 = getInstCopy(CopyLHS, IC, InstCache2, BlockCache2, 0, true);
       bool cfound = false;
       Inst *ClearLHS = clear_traverse(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
 
