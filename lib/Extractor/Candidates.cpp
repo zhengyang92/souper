@@ -55,34 +55,6 @@ static llvm::cl::opt<bool> HarvestConstantRange(
     "souper-harvest-const-range",
     llvm::cl::desc("Perform range analysis (default=true)"),
     llvm::cl::init(true));
-static llvm::cl::opt<bool> PrintNegAtReturn(
-    "print-neg-at-return",
-    llvm::cl::desc("Print negative dfa in each value returned from a function (default=false)"),
-    llvm::cl::init(false));
-static llvm::cl::opt<bool> PrintNonNegAtReturn(
-    "print-nonneg-at-return",
-    llvm::cl::desc("Print negative dfa in each value returned from a function (default=false)"),
-    llvm::cl::init(false));
-static llvm::cl::opt<bool> PrintKnownAtReturn(
-    "print-known-at-return",
-    llvm::cl::desc("Print known bits in each value returned from a function (default=false)"),
-    llvm::cl::init(false));
-static llvm::cl::opt<bool> PrintPowerTwoAtReturn(
-    "print-power-two-at-return",
-    llvm::cl::desc("Print power two dfa in each value returned from a function (default=false)"),
-    llvm::cl::init(false));
-static llvm::cl::opt<bool> PrintNonZeroAtReturn(
-    "print-non-zero-at-return",
-    llvm::cl::desc("Print non zero dfa in each value returned from a function (default=false)"),
-    llvm::cl::init(false));
-static llvm::cl::opt<bool> PrintSignBitsAtReturn(
-    "print-sign-bits-at-return",
-    llvm::cl::desc("Print sign bits dfa in each value returned from a function (default=false)"),
-    llvm::cl::init(false));
-static llvm::cl::opt<bool> PrintRangeAtReturn(
-    "print-range-at-return",
-    llvm::cl::desc("Print range inforation in each value returned from a function (default=false)"),
-    llvm::cl::init(false));
 static llvm::cl::opt<bool> PrintDemandedBitsAtReturn(
     "print-demanded-bits-at-return",
     llvm::cl::desc("Print demanded bits (default=false)"),
@@ -852,82 +824,6 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
     std::unique_ptr<BlockCandidateSet> BCS(new BlockCandidateSet);
     for (auto &I : BB) {
       llvm::outs() << "For instruction\n";
-      if (PrintNegAtReturn && isa<ReturnInst>(I)) {
-        auto V = I.getOperand(0);
-        auto DL = F.getParent()->getDataLayout();
-        bool Negative = 0;
-        Negative = isKnownNegative(V, DL);
-        if (Negative)
-          llvm::outs() << "known at return: " << "(negative)" << "\n";
-        else
-          llvm::outs() << "known at return: " << "" << "\n";
-      }
-      if (PrintNonNegAtReturn && isa<ReturnInst>(I)) {
-        auto V = I.getOperand(0);
-        auto DL = F.getParent()->getDataLayout();
-        bool NonNegative = 0;
-        NonNegative = isKnownNonNegative(V, DL);
-        if (NonNegative)
-          llvm::outs() << "known at return: " << "(nonNegative)" << "\n";
-        else
-          llvm::outs() << "known at return: " << "" << "\n";
-      }
-      if (PrintKnownAtReturn && isa<ReturnInst>(I)) {
-        auto V = I.getOperand(0);
-        auto DL = F.getParent()->getDataLayout();
-        unsigned Width = DL.getTypeSizeInBits(V->getType());
-        KnownBits Known(Width);
-        computeKnownBits(V, Known, DL);
-        llvm::outs() << "known at return: " << Inst::getKnownBitsString(Known.Zero, Known.One) << "\n";
-      }
-      if (PrintPowerTwoAtReturn && isa<ReturnInst>(I)) {
-        auto V = I.getOperand(0);
-        auto DL = F.getParent()->getDataLayout();
-        bool PowerTwo = 0;
-        PowerTwo = isKnownToBeAPowerOfTwo(V, DL);
-        if (PowerTwo)
-          llvm::outs() << "known at return: " << "(powerOfTwo)" << "\n";
-        else
-          llvm::outs() << "known at return: " << "" << "\n";
-      }
-      if (PrintNonZeroAtReturn && isa<ReturnInst>(I)) {
-        auto V = I.getOperand(0);
-        auto DL = F.getParent()->getDataLayout();
-        bool NonZero = 0;
-        NonZero = isKnownNonZero(V, DL);
-        if (NonZero)
-          llvm::outs() << "known at return: " << "(nonZero)" << "\n";
-        else
-          llvm::outs() << "known at return: " << "" << "\n";
-      }
-      if (PrintSignBitsAtReturn && isa<ReturnInst>(I)) {
-        auto V = I.getOperand(0);
-        auto DL = F.getParent()->getDataLayout();
-        unsigned NumSignBits = 1;
-        NumSignBits = ComputeNumSignBits(V, DL);
-        if (NumSignBits > 1)
-          llvm::outs() << "known at return: " << NumSignBits << "\n";
-        else
-          llvm::outs() << "known at return: " << "" << "\n";
-      }
-      if (PrintRangeAtReturn && isa<ReturnInst>(I)) {
-        auto V = I.getOperand(0);
-        auto DL = F.getParent()->getDataLayout();
-        unsigned Width = DL.getTypeSizeInBits(V->getType());
-        ConstantRange Range = llvm::ConstantRange(Width, /*isFullSet=*/true);
-        if (V->getType()->isIntegerTy()) {
-          if (Instruction *I = dyn_cast<Instruction>(V)) {
-            BasicBlock *BB = I->getParent();
-            auto LVIRange = LVI->getConstantRange(V, BB);
-            auto SC = SE->getSCEV(V);
-            auto R1 = LVIRange.intersectWith(SE->getSignedRange(SC));
-            auto R2 = LVIRange.intersectWith(SE->getUnsignedRange(SC));
-            Range = R1.getSetSize().ult(R2.getSetSize()) ? R1 : R2;
-          }
-        }
-        llvm::outs() << "known at return: " << "[" << Range.getLower() << ","
-                     << Range.getUpper() << ")" << "\n";
-      }
       if (PrintDemandedBitsAtReturn && I.getType()->isIntegerTy()) {
 //        auto V = I.getOperand(0);
 //        auto DL = F.getParent()->getDataLayout();

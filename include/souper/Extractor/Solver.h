@@ -40,42 +40,6 @@ public:
           std::vector<std::pair<Inst *, llvm::APInt>> *Model) = 0;
   virtual std::string getName() = 0;
   virtual
-  std::error_code Negative(const BlockPCs &BPCs,
-                           const std::vector<InstMapping> &PCs,
-                           Inst *LHS, llvm::APInt &Negative,
-                           InstContext &IC) = 0;
-  virtual
-  std::error_code knownBits(const BlockPCs &BPCs,
-                            const std::vector<InstMapping> &PCs,
-                            Inst *LHS, llvm::APInt &Zeros, llvm::APInt &Ones,
-                            InstContext &IC) = 0;
-  virtual
-  std::error_code nonNegative(const BlockPCs &BPCs,
-                            const std::vector<InstMapping> &PCs,
-                            Inst *LHS, llvm::APInt &NonNegative,
-                            InstContext &IC) = 0;
-  virtual
-  std::error_code powerTwo(const BlockPCs &BPCs,
-                            const std::vector<InstMapping> &PCs,
-                            Inst *LHS, llvm::APInt &PowerTwo,
-                            InstContext &IC) = 0;
-  virtual
-  std::error_code nonZero(const BlockPCs &BPCs,
-                            const std::vector<InstMapping> &PCs,
-                            Inst *LHS, llvm::APInt &NonZero,
-                            InstContext &IC) = 0;
-  virtual
-  std::error_code signBits(const BlockPCs &BPCs,
-                            const std::vector<InstMapping> &PCs,
-                            Inst *LHS, unsigned &SignBits,
-                            InstContext &IC) = 0;
-  virtual
-  std::error_code range(const BlockPCs &BPCs,
-                            const std::vector<InstMapping> &PCs,
-                            Inst *LHS, llvm::ConstantRange &Range,
-                            llvm::APInt &PrevLow, llvm::APInt &PrevUp,
-                            InstContext &IC) = 0;
-  virtual
   std::error_code testDemandedBits(const BlockPCs &BPCs,
                                    const std::vector<InstMapping> &PCs,
                                    Inst *LHS, llvm::APInt &DB,
