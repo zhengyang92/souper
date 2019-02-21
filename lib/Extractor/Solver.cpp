@@ -100,6 +100,43 @@ public:
     return OrigLHS;
   }
 
+  Inst * new_set_traverse(Inst *LHS, unsigned bitPos, InstContext &IC, unsigned idx, bool &found) {
+    // copy LHS
+    std::map<Inst *, Inst *> InstCache;
+    std::map<Block *, Block *> BlockCache;
+    Inst *CopyLHS = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
+    Inst *OrigLHS = CopyLHS;
+    Inst *prev = CopyLHS;
+    Inst *node = CopyLHS;
+
+label_set_traverse:
+    // find var and modify it
+    if (node->K == Inst::Var) {
+      found = true;
+      llvm::outs() << "** found var in set_traversal **\n";
+      unsigned VarWidth = node->Width;
+      APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
+      Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
+
+      llvm::outs() << "- - - - - - plain traverse set mask only ---\n";
+      plain_traverse(SetMask);
+
+      prev->Ops[idx] = SetMask;
+
+      return OrigLHS;
+    }
+    for (unsigned Op=0; Op<node->Ops.size(); ++Op) {
+      prev = node;
+      node = node->Ops[Op];
+      idx = Op;
+      if (found)
+        break;
+      goto label_set_traverse;
+    }
+
+    return OrigLHS;
+  }
+
   void plain_traverse(Inst *LHS) {
     if (!LHS) return;
     llvm::outs() << "Kind = " << Inst::getKindName(LHS->K) << ", Value = " << LHS->Val <<"\n";
@@ -259,13 +296,14 @@ public:
     for (unsigned I=0; I<W; I++) {
       InstCache.clear();
       BlockCache.clear();
-      Inst *OrigLHS1 = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
+      Inst *OrigLHS1 = getInstCopy(LHS, IC, InstCache, BlockCache, 0, false);
       InstCache.clear();
       BlockCache.clear();
-      Inst *OrigLHS2 = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
+      Inst *OrigLHS2 = getInstCopy(LHS, IC, InstCache, BlockCache, 0, false);
 
       bool sfound = false;
-      Inst *SetLHS = set_traverse(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0, sfound);
+//      Inst *SetLHS = set_traverse(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0, sfound);
+      Inst *SetLHS = new_set_traverse(LHS,I, IC, 0, sfound);
       /*      llvm::errs()<<"R1-----\n";
       ReplacementContext RC1;
       RC1.printInst(SetLHS, llvm::errs(), true);
@@ -273,8 +311,8 @@ public:
       RC2.printInst(LHS, llvm::errs(), true);
       llvm::errs()<<"R1-----\n";*/
 
-      bool cfound = false;
-      Inst *ClearLHS = clear_traverse(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
+//      bool cfound = false;
+//      Inst *ClearLHS = clear_traverse(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
 
       /*
       llvm::errs()<<"R2-----\n";
@@ -304,15 +342,15 @@ public:
 //                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
 //                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
 //                                              I, IC, 0, sfound), IC)) {
-      if (testDB(BPCs, PCs, LHS, ClearLHS, IC)) {
-        // not-demanded
-        llvm::outs() << "clear: Bit = " << I << " = not-demanded\n";
-        ResultDB = ResultDB;
-      } else {
-        // demanded
-        llvm::outs() << "clear: Bit = " << I << " = demanded\n";
-        ResultDB |= APInt::getOneBitSet(W, I);
-      }
+//      if (testDB(BPCs, PCs, LHS, ClearLHS, IC)) {
+//        // not-demanded
+//        llvm::outs() << "clear: Bit = " << I << " = not-demanded\n";
+//        ResultDB = ResultDB;
+//      } else {
+//        // demanded
+//        llvm::outs() << "clear: Bit = " << I << " = demanded\n";
+//        ResultDB |= APInt::getOneBitSet(W, I);
+//      }
     }
     return std::error_code();
   }
