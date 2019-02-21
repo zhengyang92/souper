@@ -83,8 +83,8 @@ public:
       unsigned VarWidth = node->Width;
       APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
       Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
-     
-      llvm::outs() << "- - - - - - plain traverse set mask only ---\n"; 
+
+      llvm::outs() << "- - - - - - plain traverse set mask only ---\n";
       plain_traverse(SetMask);
 
       prev->Ops[idx] = SetMask;
@@ -136,7 +136,7 @@ public:
 
     return OrigLHS;
   }
-  
+
   // modified testDB w.r.t. InferNop bigquery logic
   bool testDB(const BlockPCs &BPCs,
               const std::vector<InstMapping> &PCs,
@@ -149,7 +149,7 @@ public:
     APInt TrueGuess(1, 1, false);
     Inst *True = IC.getConst(TrueGuess);
     InstMapping Mapping(Ante, True);
-    
+
     llvm::outs() << "- - - -- - - - Original Tree is - - - - - - \n";
     plain_traverse(LHS);
     llvm::outs() << "- - - -- - - - New Tree is - - - - - - \n";
@@ -253,30 +253,44 @@ public:
     unsigned W = LHS->Width;
     std::map<Inst *, Inst *> InstCache;
     std::map<Block *, Block *> BlockCache;
-    Inst *CopyLHS = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
 
     ResultDB = APInt::getNullValue(W);
 
     for (unsigned I=0; I<W; I++) {
-      std::map<Inst *, Inst *> InstCache1;
-      std::map<Block *, Block *> BlockCache1;
-      Inst *OrigLHS1 = getInstCopy(CopyLHS, IC, InstCache1, BlockCache1, 0, true);
+      InstCache.clear();
+      BlockCache.clear();
+      Inst *OrigLHS1 = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
+      InstCache.clear();
+      BlockCache.clear();
+      Inst *OrigLHS2 = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
 
       bool sfound = false;
       Inst *SetLHS = set_traverse(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0, sfound);
+      /*      llvm::errs()<<"R1-----\n";
+      ReplacementContext RC1;
+      RC1.printInst(SetLHS, llvm::errs(), true);
+      ReplacementContext RC2;
+      RC2.printInst(LHS, llvm::errs(), true);
+      llvm::errs()<<"R1-----\n";*/
 
-      std::map<Inst *, Inst *> InstCache2;
-      std::map<Block *, Block *> BlockCache2;
-      Inst *OrigLHS2 = getInstCopy(CopyLHS, IC, InstCache2, BlockCache2, 0, true);
       bool cfound = false;
       Inst *ClearLHS = clear_traverse(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
+
+      /*
+      llvm::errs()<<"R2-----\n";
+      ReplacementContext RC3;
+      RC3.printInst(ClearLHS, llvm::errs(), true);
+      ReplacementContext RC4;
+      RC4.printInst(LHS, llvm::errs(), true);
+      llvm::errs()<<"R2-----\n";
+      */
 
 //      if (testDB(BPCs, PCs, getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
 //          set_traverse(getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
 //                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
 //                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0,false),
 //                                              I, IC, 0, sfound), IC)) {
-      if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC)) {
+      if (testDB(BPCs, PCs, LHS, SetLHS, IC)) {
         // not-demanded
         llvm::outs() << "set: Bit = " << I << " = not-demanded\n";
         ResultDB = ResultDB;
@@ -290,7 +304,7 @@ public:
 //                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
 //                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
 //                                              I, IC, 0, sfound), IC)) {
-      if (testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
+      if (testDB(BPCs, PCs, LHS, ClearLHS, IC)) {
         // not-demanded
         llvm::outs() << "clear: Bit = " << I << " = not-demanded\n";
         ResultDB = ResultDB;
