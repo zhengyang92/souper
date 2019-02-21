@@ -253,23 +253,26 @@ public:
     unsigned W = LHS->Width;
     std::map<Inst *, Inst *> InstCache;
     std::map<Block *, Block *> BlockCache;
-//    Inst *CopyLHS = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
+    Inst *CopyLHS = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
 
     ResultDB = APInt::getNullValue(W);
 
     for (unsigned I=0; I<W; I++) {
+      Inst *OrigLHS1 = getInstCopy(CopyLHS, IC, InstCache, BlockCache, 0, true);
 
       bool sfound = false;
- //     Inst *SetLHS = set_traverse_to_find_and_update_var(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0, sfound);
+      Inst *SetLHS = set_traverse(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0, sfound);
 
+      Inst *OrigLHS2 = getInstCopy(CopyLHS, IC, InstCache, BlockCache, 0, true);
       bool cfound = false;
-//      Inst *ClearLHS = clear_traverse_to_find_and_update_var(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
+      Inst *ClearLHS = clear_traverse(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
 
-      if (testDB(BPCs, PCs, getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-          set_traverse(getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0,false),
-                                              I, IC, 0, sfound), IC)) {
+//      if (testDB(BPCs, PCs, getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
+//          set_traverse(getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
+//                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
+//                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0,false),
+//                                              I, IC, 0, sfound), IC)) {
+      if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC)) {
         // not-demanded
         llvm::outs() << "set: Bit = " << I << " = not-demanded\n";
         ResultDB = ResultDB;
@@ -278,11 +281,12 @@ public:
         llvm::outs() << "set: Bit = " << I << " = demanded\n";
         ResultDB |= APInt::getOneBitSet(W, I);
       }
-      if (testDB(BPCs, PCs, getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-          clear_traverse(getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-                                              I, IC, 0, sfound), IC)) {
+//      if (testDB(BPCs, PCs, getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
+//          clear_traverse(getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
+//                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
+//                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
+//                                              I, IC, 0, sfound), IC)) {
+      if (testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
         // not-demanded
         llvm::outs() << "clear: Bit = " << I << " = not-demanded\n";
         ResultDB = ResultDB;
