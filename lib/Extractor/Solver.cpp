@@ -21,6 +21,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "souper/Extractor/Solver.h"
+#include "souper/Infer/AliveDriver.h"
 #include "souper/Infer/ExhaustiveSynthesis.h"
 #include "souper/Infer/InstSynthesis.h"
 #include "souper/KVStore/KVStore.h"
@@ -439,16 +440,27 @@ label_set_traverse:
         Guesses.emplace_back(IC.getConst(APInt(LHS->Width, -1)));
       for (auto I : Guesses) {
         InstMapping Mapping(LHS, I);
-        std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
-        if (Query.empty())
-          return std::make_error_code(std::errc::value_too_large);
-        bool IsSat;
-        EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
-        if (EC)
-          return EC;
-        if (!IsSat) {
-          RHS = I;
-          return EC;
+
+        if (UseAlive) {
+          bool IsValid = isTransformationValid(Mapping.LHS, Mapping.RHS,
+                                               PCs, IC);
+          if (IsValid) {
+            RHS = I;
+            return std::error_code();
+          }
+          // TODO: Propagate errors from Alive backend, exit early for errors
+        } else {
+          std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
+          if (Query.empty())
+            return std::make_error_code(std::errc::value_too_large);
+          bool IsSat;
+          EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
+          if (EC)
+            return EC;
+          if (!IsSat) {
+            RHS = I;
+            return EC;
+          }
         }
       }
     }
@@ -458,39 +470,63 @@ label_set_traverse:
       std::vector<llvm::APInt> ModelVals;
       Inst *I = IC.createVar(LHS->Width, "constant");
       InstMapping Mapping(LHS, I);
-      std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, &ModelInsts, /*Negate=*/true);
-      if (Query.empty())
-        return std::make_error_code(std::errc::value_too_large);
-      bool IsSat;
-      EC = SMTSolver->isSatisfiable(Query, IsSat, ModelInsts.size(),
-                                    &ModelVals, Timeout);
-      if (EC)
-        return EC;
-      if (IsSat) {
-        // We found a model for a constant
-        Inst *Const = 0;
-        for (unsigned J = 0; J != ModelInsts.size(); ++J) {
-          if (ModelInsts[J]->Name == "constant") {
-            Const = IC.getConst(ModelVals[J]);
-            break;
-          }
+
+      if (UseAlive) {
+        //Try to synthesize a constant at the root
+        I = IC.createVar(LHS->Width, "reservedconst_0");
+
+        Inst *Ante = IC.getConst(llvm::APInt(1, true));
+        for (auto PC : PCs ) {
+          Inst *Eq = IC.getInst(Inst::Eq, 1, {PC.LHS, PC.RHS});
+          Ante = IC.getInst(Inst::And, 1, {Ante, Eq});
         }
-        if (!Const)
-          report_fatal_error("there must be a model for the constant");
-        // Check if the constant is valid for all inputs
-        InstMapping ConstMapping(LHS, Const);
-        std::string Query = BuildQuery(IC, BPCs, PCs, ConstMapping, 0);
+
+        AliveDriver Synthesizer(LHS, Ante);
+        auto ConstantMap = Synthesizer.synthesizeConstants(I);
+        if (ConstantMap.find(I) != ConstantMap.end()) {
+          RHS = IC.getConst(ConstantMap[I]);
+          return std::error_code();
+        }
+        // TODO: Propagate errors from Alive backend, exit early for errors
+      } else {
+        std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, &ModelInsts, /*Negate=*/true);
         if (Query.empty())
           return std::make_error_code(std::errc::value_too_large);
-        EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
+        bool IsSat;
+        EC = SMTSolver->isSatisfiable(Query, IsSat, ModelInsts.size(),
+                                    &ModelVals, Timeout);
         if (EC)
           return EC;
-        if (!IsSat) {
-          RHS = Const;
-          return EC;
+        if (IsSat) {
+          // We found a model for a constant
+          Inst *Const = 0;
+          for (unsigned J = 0; J != ModelInsts.size(); ++J) {
+            if (ModelInsts[J]->Name == "constant") {
+              Const = IC.getConst(ModelVals[J]);
+              break;
+            }
+          }
+          if (!Const)
+            report_fatal_error("there must be a model for the constant");
+          // Check if the constant is valid for all inputs
+          InstMapping ConstMapping(LHS, Const);
+          std::string Query = BuildQuery(IC, BPCs, PCs, ConstMapping, 0);
+          if (Query.empty())
+            return std::make_error_code(std::errc::value_too_large);
+          EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
+          if (EC)
+            return EC;
+          if (!IsSat) {
+            RHS = Const;
+            return EC;
+          }
         }
       }
     }
+
+    // Do not do further synthesis if LHS is harvested from uses.
+    if (LHS->HarvestKind == HarvestType::HarvestedFromUse)
+      return EC;
 
     if (InferNop) {
       std::vector<Inst *> Guesses;
@@ -578,6 +614,10 @@ label_set_traverse:
                           InstMapping Mapping, bool &IsValid,
                           std::vector<std::pair<Inst *, llvm::APInt>> *Model)
   override {
+    if (UseAlive) {
+      IsValid = isTransformationValid(Mapping.LHS, Mapping.RHS, PCs, IC);
+      return std::error_code();
+    }
     std::string Query;
     if (Model && SMTSolver->supportsModels()) {
       std::vector<Inst *> ModelInsts;
