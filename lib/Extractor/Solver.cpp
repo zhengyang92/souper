@@ -73,10 +73,13 @@ public:
   BaseSolver(std::unique_ptr<SMTLIBSolver> SMTSolver, unsigned Timeout)
       : SMTSolver(std::move(SMTSolver)), Timeout(Timeout) {}
 
-  Inst * set_traverse(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx, bool &found) {
-    Inst *root = node;
-    llvm::outs() << "***** current = " << Inst::getKindName(node->K) << ", prev = " << Inst::getKindName(prev->K) << "\n";
+  Inst * set_traverse(Inst *node, unsigned bitPos, InstContext &IC, bool &found) {
+    std::vector<Inst *> Ops;
+    for (auto const &Op : node->Ops) {
+      Ops.push_back(set_traverse(Op, bitPos, IC, found));
+    }
 
+    Inst *Copy = nullptr;
     if (node->K == Inst::Var) {
       found = true;
       llvm::outs() << "** found var in set_traversal **\n";
@@ -84,20 +87,18 @@ public:
       APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
       Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
 
-      llvm::outs() << "- - - - - - plain traverse set mask only ---\n";
-      plain_traverse(SetMask);
-
-      prev->Ops[idx] = SetMask;
-
-      return OrigLHS;
+      Copy = SetMask;
+    } else if (node->K == Inst::Const || node->K == Inst::UntypedConst) {
+      return node;
+    } else if (node->K == Inst::Phi) {
+      auto BlockCopy = IC.createBlock(node->B->Preds);
+      Copy = IC.getPhi(BlockCopy, Ops);
+    } else {
+      Copy = IC.getInst(node->K, node->Width, Ops);
     }
-    for (unsigned Op=0; Op<node->Ops.size(); ++Op) {
-      set_traverse(node->Ops[Op], OrigLHS, node, bitPos, IC, Op, found);
-      if (found)
-        break;
-    }
+    assert(Copy);
 
-    return OrigLHS;
+    return Copy;
   }
 
   Inst * new_set_traverse(Inst *LHS, unsigned bitPos, InstContext &IC, unsigned idx, bool &found) {
@@ -294,22 +295,16 @@ label_set_traverse:
     ResultDB = APInt::getNullValue(W);
 
     for (unsigned I=0; I<W; I++) {
-      InstCache.clear();
-      BlockCache.clear();
-      Inst *OrigLHS1 = getInstCopy(LHS, IC, InstCache, BlockCache, 0, false);
-      InstCache.clear();
-      BlockCache.clear();
-      Inst *OrigLHS2 = getInstCopy(LHS, IC, InstCache, BlockCache, 0, false);
 
       bool sfound = false;
 //      Inst *SetLHS = set_traverse(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0, sfound);
-      Inst *SetLHS = new_set_traverse(LHS,I, IC, 0, sfound);
-      /*      llvm::errs()<<"R1-----\n";
+      Inst *SetLHS = set_traverse(LHS, I, IC, sfound);
+      llvm::errs()<<"R1-----\n";
       ReplacementContext RC1;
       RC1.printInst(SetLHS, llvm::errs(), true);
       ReplacementContext RC2;
       RC2.printInst(LHS, llvm::errs(), true);
-      llvm::errs()<<"R1-----\n";*/
+      llvm::errs()<<"R1-----\n";
 
 //      bool cfound = false;
 //      Inst *ClearLHS = clear_traverse(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
