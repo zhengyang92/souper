@@ -264,7 +264,7 @@ public:
     return std::error_code();
   }
 
-  Inst * set_traverse_to_find_and_update_var(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx, bool &found) {
+  Inst * set_traverse(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx, bool &found) {
     Inst *root = node;
     llvm::outs() << "***** current = " << Inst::getKindName(node->K) << ", prev = " << Inst::getKindName(prev->K) << "\n";
 
@@ -285,7 +285,7 @@ public:
       return OrigLHS;
     }
     for (unsigned Op=0; Op<node->Ops.size(); ++Op) {
-      set_traverse_to_find_and_update_var(node->Ops[Op], OrigLHS, node, bitPos, IC, Op, found);
+      set_traverse(node->Ops[Op], OrigLHS, node, bitPos, IC, Op, found);
       if (found)
         break;
     }
@@ -303,7 +303,7 @@ public:
     }
   }
 
-  Inst * clear_traverse_to_find_and_update_var(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx, bool &found) {
+  Inst * clear_traverse(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx, bool &found) {
     Inst *root = node;
     if (node->K == Inst::Var) {
       unsigned VarWidth = node->Width;
@@ -323,7 +323,7 @@ public:
       return OrigLHS;
     }
     for (unsigned Op=0; Op<node->Ops.size(); ++Op) {
-      clear_traverse_to_find_and_update_var(node->Ops[Op], OrigLHS, node, bitPos, IC, Op, found);
+      clear_traverse(node->Ops[Op], OrigLHS, node, bitPos, IC, Op, found);
       if (found) break;
     }
 
@@ -368,6 +368,7 @@ public:
     return AllOnes;
   }
 
+  // working version with manual LHS and loop to set constants to set the bits in var
   std::error_code testDemandedBits(const BlockPCs &BPCs,
                               const std::vector<InstMapping> &PCs,
                               Inst *LHS, APInt &ResultDB,
@@ -385,8 +386,8 @@ public:
       Inst *VarOrConst = IC.getInst(Inst::Or, W, {V, IC.getConst(SetBit)});
       Inst *NewLHS = IC.getInst(Inst::Shl, W, {VarOrConst, IC.getConst(APInt(W, 1))});
 
-      ///std::map<Inst *, Inst *> InstCache;
-      ///std::map<Block *, Block *> BlockCache;
+      std::map<Inst *, Inst *> InstCache;
+      std::map<Block *, Block *> BlockCache;
 
       // comparing original LHS to copy of LHS does not work
       //Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, getInstCopy(LHS, IC, InstCache, BlockCache, 0, true)});
@@ -395,7 +396,18 @@ public:
       //Inst *Ne = IC.getInst(Inst::Ne, 1, {getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
       //                                    getInstCopy(LHS, IC, InstCache, BlockCache, 0, true)});
 
+      //Inst *Ne = IC.getInst(Inst::Ne, 1, {getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+      //                                    getInstCopy(NewLHS, IC, InstCache, BlockCache, 0, true)});
+
       Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, NewLHS});
+
+      // using getInstCopy() with set_traverse() does not work
+      //bool sfound = false;
+      //Inst *Ne = IC.getInst(Inst::Ne, 1, {getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+      //                                    set_traverse(getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+      //                                                 getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+      //                                                 getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
+      //                                                 I, IC, 0, sfound)});
 
       Inst *Ante = IC.getConst(APInt(1, true));
       Ante = IC.getInst(Inst::And, 1, {Ante, Ne});
