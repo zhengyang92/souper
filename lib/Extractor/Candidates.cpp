@@ -60,7 +60,7 @@ static llvm::cl::opt<bool> HarvestUses(
     llvm::cl::desc("Harvest operands (default=false)"),
     llvm::cl::init(false));
 static llvm::cl::opt<bool> PrintDemandedBitsAtReturn(
-    "print-demanded-bits-at-return",
+    "print-demanded-bits-from-harvester",
     llvm::cl::desc("Print demanded bits (default=false)"),
     llvm::cl::init(false));
 
@@ -846,7 +846,7 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
       llvm::outs() << "For instruction\n";
       if (PrintDemandedBitsAtReturn && I.getType()->isIntegerTy()) {
         APInt DemandedBitsVal = DB->getDemandedBits(&I);
-        llvm::outs() << "known at return: " << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
+        llvm::outs() << "known demanded-bits: " << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
       }
 
       // Harvest Uses (Operands)

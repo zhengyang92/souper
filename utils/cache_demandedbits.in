@@ -210,11 +210,11 @@ sub llvm_known($) {
     (my $fh1, my $fn1) = File::Temp::tempfile();
     print $fh1 $opt;
     close $fh1;
-    open INF, "$triager < $fn1 | $llvmas | $souper -print-demanded-bits-at-return |" or die;
+    open INF, "$triager < $fn1 | $llvmas | $souper -print-demanded-bits-from-harvester |" or die;
     my $known;
     while (my $line = <INF>) {
 	chomp $line;
-	if ($line =~ /known at return: (.*)$/) {
+	if ($line =~ /known demanded-bits: (.*)$/) {
 	    $known = $1;
 	}
     }

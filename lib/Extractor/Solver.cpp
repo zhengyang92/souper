@@ -85,6 +85,7 @@ public:
       found = true;
       llvm::outs() << "** found var in set_traversal **\n";
       unsigned VarWidth = node->Width;
+      llvm::outs() << "*********************** var width = " << VarWidth << "\n";
       APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
       Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
 
@@ -102,41 +103,32 @@ public:
     return Copy;
   }
 
-  Inst * new_set_traverse(Inst *LHS, unsigned bitPos, InstContext &IC, unsigned idx, bool &found) {
-    // copy LHS
-    std::map<Inst *, Inst *> InstCache;
-    std::map<Block *, Block *> BlockCache;
-    Inst *CopyLHS = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
-    Inst *OrigLHS = CopyLHS;
-    Inst *prev = CopyLHS;
-    Inst *node = CopyLHS;
+  Inst * clear_traverse(Inst *node, unsigned bitPos, InstContext &IC, bool &found) {
+    std::vector<Inst *> Ops;
+    for (auto const &Op : node->Ops) {
+      Ops.push_back(set_traverse(Op, bitPos, IC, found));
+    }
 
-label_set_traverse:
-    // find var and modify it
+    Inst *Copy = nullptr;
     if (node->K == Inst::Var) {
       found = true;
       llvm::outs() << "** found var in set_traversal **\n";
       unsigned VarWidth = node->Width;
-      APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
-      Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
+      APInt ClearBit = getClearedBit(bitPos, VarWidth); //1110
+      Inst *SetMask = IC.getInst(Inst::And, VarWidth, {node, IC.getConst(ClearBit)}); //xxxx || 0001
 
-      llvm::outs() << "- - - - - - plain traverse set mask only ---\n";
-      plain_traverse(SetMask);
-
-      prev->Ops[idx] = SetMask;
-
-      return OrigLHS;
+      Copy = SetMask;
+    } else if (node->K == Inst::Const || node->K == Inst::UntypedConst) {
+      return node;
+    } else if (node->K == Inst::Phi) {
+      auto BlockCopy = IC.createBlock(node->B->Preds);
+      Copy = IC.getPhi(BlockCopy, Ops);
+    } else {
+      Copy = IC.getInst(node->K, node->Width, Ops);
     }
-    for (unsigned Op=0; Op<node->Ops.size(); ++Op) {
-      prev = node;
-      node = node->Ops[Op];
-      idx = Op;
-      if (found)
-        break;
-      goto label_set_traverse;
-    }
+    assert(Copy);
 
-    return OrigLHS;
+    return Copy;
   }
 
   void plain_traverse(Inst *LHS) {
@@ -147,33 +139,6 @@ label_set_traverse:
     for (unsigned Op = 0; Op < LHS->Ops.size(); ++Op) {
       plain_traverse(LHS->Ops[Op]);
     }
-  }
-
-  Inst * clear_traverse(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx, bool &found) {
-    Inst *root = node;
-    if (node->K == Inst::Var) {
-      unsigned VarWidth = node->Width;
-
-      APInt AllOnes = APInt::getAllOnesValue(VarWidth); //1111
-      APInt ClearBit = getClearedBit(bitPos, VarWidth); //1110
-
-      Inst *ClearMask = IC.getInst(Inst::And, VarWidth, {node, IC.getConst(ClearBit)}); // xxxx && ~(0001)
-
-      llvm::outs() << "~~~~~~~ plain traverse just clear mask: \n";
-      plain_traverse(ClearMask);
-
-//      node = ClearMask;
-//      prev->Ops[idx] = node;
-      prev->Ops[idx] = ClearMask;
-
-      return OrigLHS;
-    }
-    for (unsigned Op=0; Op<node->Ops.size(); ++Op) {
-      clear_traverse(node->Ops[Op], OrigLHS, node, bitPos, IC, Op, found);
-      if (found) break;
-    }
-
-    return OrigLHS;
   }
 
   // modified testDB w.r.t. InferNop bigquery logic
@@ -307,46 +272,25 @@ label_set_traverse:
       RC2.printInst(LHS, llvm::errs(), true);
       llvm::errs()<<"R1-----\n";
 
-//      bool cfound = false;
+      bool cfound = false;
 //      Inst *ClearLHS = clear_traverse(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
-
-      /*
+      Inst *ClearLHS = clear_traverse(LHS, I, IC, cfound);
       llvm::errs()<<"R2-----\n";
       ReplacementContext RC3;
       RC3.printInst(ClearLHS, llvm::errs(), true);
       ReplacementContext RC4;
       RC4.printInst(LHS, llvm::errs(), true);
       llvm::errs()<<"R2-----\n";
-      */
 
-//      if (testDB(BPCs, PCs, getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-//          set_traverse(getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-//                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-//                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0,false),
-//                                              I, IC, 0, sfound), IC)) {
-      if (testDB(BPCs, PCs, LHS, SetLHS, IC)) {
+      if (testDB(BPCs, PCs, LHS, SetLHS, IC) && testDB(BPCs, PCs, LHS, ClearLHS, IC)) {
         // not-demanded
-        llvm::outs() << "set: Bit = " << I << " = not-demanded\n";
+        llvm::outs() << "********** Bit = " << I << " = not-demanded\n";
         ResultDB = ResultDB;
       } else {
         // demanded
-        llvm::outs() << "set: Bit = " << I << " = demanded\n";
+        llvm::outs() << "*********** Bit = " << I << " = demanded\n";
         ResultDB |= APInt::getOneBitSet(W, I);
       }
-//      if (testDB(BPCs, PCs, getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-//          clear_traverse(getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-//                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-//                                              getInstCopy(LHS, IC, InstCache, BlockCache, 0, false),
-//                                              I, IC, 0, sfound), IC)) {
-//      if (testDB(BPCs, PCs, LHS, ClearLHS, IC)) {
-//        // not-demanded
-//        llvm::outs() << "clear: Bit = " << I << " = not-demanded\n";
-//        ResultDB = ResultDB;
-//      } else {
-//        // demanded
-//        llvm::outs() << "clear: Bit = " << I << " = demanded\n";
-//        ResultDB |= APInt::getOneBitSet(W, I);
-//      }
     }
     return std::error_code();
   }
