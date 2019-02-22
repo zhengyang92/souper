@@ -843,10 +843,17 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
   for (auto &BB : F) {
     std::unique_ptr<BlockCandidateSet> BCS(new BlockCandidateSet);
     for (auto &I : BB) {
-      llvm::outs() << "For instruction\n";
       if (PrintDemandedBitsAtReturn && I.getType()->isIntegerTy()) {
-        APInt DemandedBitsVal = DB->getDemandedBits(&I);
-        llvm::outs() << "known demanded-bits: " << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
+        if (auto BO = dyn_cast<BinaryOperator>(&I)) {
+          auto AddOp = BO->getOpcode();
+          if (AddOp == Instruction::Add) {
+            Inst *ConstZero = EB.get(BO->getOperand(1));
+            if (!ConstZero->Val.getBoolValue()) {
+              APInt DemandedBitsVal = DB->getDemandedBits(&I);
+              llvm::outs() << "known demanded-bits: " << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
+            }
+          }
+        }
       }
 
       // Harvest Uses (Operands)
