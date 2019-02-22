@@ -83,9 +83,9 @@ public:
     Inst *Copy = nullptr;
     if (node->K == Inst::Var) {
       found = true;
-      llvm::outs() << "** found var in set_traversal **\n";
+      //llvm::outs() << "** found var in set_traversal **\n";
       unsigned VarWidth = node->Width;
-      llvm::outs() << "*********************** var width = " << VarWidth << "\n";
+      //llvm::outs() << "*********************** var width = " << VarWidth << "\n";
       APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
       Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
 
@@ -112,10 +112,10 @@ public:
     Inst *Copy = nullptr;
     if (node->K == Inst::Var) {
       found = true;
-      llvm::outs() << "** found var in set_traversal **\n";
+      //llvm::outs() << "** found var in set_traversal **\n";
       unsigned VarWidth = node->Width;
       APInt ClearBit = getClearedBit(bitPos, VarWidth); //1110
-      Inst *SetMask = IC.getInst(Inst::And, VarWidth, {node, IC.getConst(ClearBit)}); //xxxx || 0001
+      Inst *SetMask = IC.getInst(Inst::And, VarWidth, {node, IC.getConst(ClearBit)}); //xxxx && 1110
 
       Copy = SetMask;
     } else if (node->K == Inst::Const || node->K == Inst::UntypedConst) {
@@ -134,8 +134,6 @@ public:
   void plain_traverse(Inst *LHS) {
     if (!LHS) return;
     llvm::outs() << "Kind = " << Inst::getKindName(LHS->K) << ", Value = " << LHS->Val <<"\n";
-    //for (auto Op: LHS->Ops) {
-      //plain_traverse(Op);
     for (unsigned Op = 0; Op < LHS->Ops.size(); ++Op) {
       plain_traverse(LHS->Ops[Op]);
     }
@@ -153,23 +151,22 @@ public:
     APInt TrueGuess(1, 1, false);
     Inst *True = IC.getConst(TrueGuess);
     InstMapping Mapping(Ante, True);
-
+/*
     llvm::outs() << "- - - -- - - - Original Tree is - - - - - - \n";
     plain_traverse(LHS);
     llvm::outs() << "- - - -- - - - New Tree is - - - - - - \n";
     plain_traverse(NewLHS);
-
+*/
 
     //InstMapping Mapping(LHS, NewLHS);
     bool IsSat;
-//    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
     std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0, true);
-    llvm::outs() << "==== Query ==== \n" << Query << "\n";
+    //llvm::outs() << "==== Query ==== \n" << Query << "\n";
     std::error_code EC = SMTSolver->isSatisfiable(Query,
                                                   IsSat, 0, 0, Timeout);
     if (EC)
       llvm::report_fatal_error("stopping due to error");
-    llvm::outs() << "Result of testDB IsSat = " << IsSat << "\n";
+    //llvm::outs() << "Result of testDB IsSat = " << IsSat << "\n";
     return !IsSat;
   }
 
@@ -179,77 +176,6 @@ public:
     return AllOnes;
   }
 
-  // working version with manual LHS and loop to set constants to set the bits in var
-///  std::error_code testDemandedBits(const BlockPCs &BPCs,
-///                              const std::vector<InstMapping> &PCs,
-///                              Inst *LHS, APInt &ResultDB,
-///                              InstContext &IC) override {
-///    unsigned W = LHS->Width;
-///    ResultDB = APInt::getNullValue(W);
-///
-///    // manually construct LHS = yy * 4
-///    Inst *V = IC.createVar(W, "yy");
-///    LHS = IC.getInst(Inst::Shl, W, {V, IC.getConst(APInt(W, 1))});
-///
-///    // loop for each bit to create a constant for setting and clearing bit in Var
-///    for (unsigned I=0; I<W; ++I) {
-///      APInt SetBit = APInt::getOneBitSet(W, I);
-///      Inst *VarOrConst = IC.getInst(Inst::Or, W, {V, IC.getConst(SetBit)});
-///      Inst *NewLHS = IC.getInst(Inst::Shl, W, {VarOrConst, IC.getConst(APInt(W, 1))});
-///
-///      std::map<Inst *, Inst *> InstCache;
-///      std::map<Block *, Block *> BlockCache;
-///
-///      // comparing original LHS to copy of LHS does not work
-///      //Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, getInstCopy(LHS, IC, InstCache, BlockCache, 0, true)});
-///
-///      // copy to copy comparison works
-///      //Inst *Ne = IC.getInst(Inst::Ne, 1, {getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
-///      //                                    getInstCopy(LHS, IC, InstCache, BlockCache, 0, true)});
-///
-///      //Inst *Ne = IC.getInst(Inst::Ne, 1, {getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
-///      //                                    getInstCopy(NewLHS, IC, InstCache, BlockCache, 0, true)});
-///
-///      Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, NewLHS});
-///
-///      // using getInstCopy() with set_traverse() does not work
-///      //bool sfound = false;
-///      //Inst *Ne = IC.getInst(Inst::Ne, 1, {getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
-///      //                                    set_traverse(getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
-///      //                                                 getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
-///      //                                                 getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
-///      //                                                 I, IC, 0, sfound)});
-///
-///      Inst *Ante = IC.getConst(APInt(1, true));
-///      Ante = IC.getInst(Inst::And, 1, {Ante, Ne});
-///
-///      InstMapping Mapping(Ante, IC.getConst(APInt(1, true)));
-///
-///      std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0, /*Negate=*/true);
-///
-///      if (Query.empty())
-///        return std::make_error_code(std::errc::value_too_large);
-///      bool IsSat;
-///      std::error_code EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
-///      if (EC)
-///        llvm::report_fatal_error("stopping due to error");
-///
-///      llvm::outs() << "Query =======\n" << Query << "\n";
-///      llvm::outs() << "IsSat ====  " << IsSat << "\n";
-///
-///      if (!IsSat) {
-///        // not demanded
-///        llvm::outs() << "Bit " << I << " : not-demanded\n";
-///      } else {
-///        // demanded
-///        llvm::outs() << "Bit " << I << " : demanded\n";
-///      }
-///    }
-///
-///    return std::error_code();
-///  }
-
-  // this version has all copies passed -- this is wrong creates big trees all the time for original LHS too
   std::error_code testDemandedBits(const BlockPCs &BPCs,
                               const std::vector<InstMapping> &PCs,
                               Inst *LHS, APInt &ResultDB,
@@ -263,99 +189,39 @@ public:
     for (unsigned I=0; I<W; I++) {
 
       bool sfound = false;
-//      Inst *SetLHS = set_traverse(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0, sfound);
       Inst *SetLHS = set_traverse(LHS, I, IC, sfound);
+/*
       llvm::errs()<<"R1-----\n";
       ReplacementContext RC1;
       RC1.printInst(SetLHS, llvm::errs(), true);
       ReplacementContext RC2;
       RC2.printInst(LHS, llvm::errs(), true);
       llvm::errs()<<"R1-----\n";
+*/
 
       bool cfound = false;
-//      Inst *ClearLHS = clear_traverse(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
       Inst *ClearLHS = clear_traverse(LHS, I, IC, cfound);
+/*
       llvm::errs()<<"R2-----\n";
       ReplacementContext RC3;
       RC3.printInst(ClearLHS, llvm::errs(), true);
       ReplacementContext RC4;
       RC4.printInst(LHS, llvm::errs(), true);
       llvm::errs()<<"R2-----\n";
+*/
 
       if (testDB(BPCs, PCs, LHS, SetLHS, IC) && testDB(BPCs, PCs, LHS, ClearLHS, IC)) {
         // not-demanded
-        llvm::outs() << "********** Bit = " << I << " = not-demanded\n";
+        //llvm::outs() << "********** Bit = " << I << " = not-demanded\n";
         ResultDB = ResultDB;
       } else {
         // demanded
-        llvm::outs() << "*********** Bit = " << I << " = demanded\n";
+        //llvm::outs() << "*********** Bit = " << I << " = demanded\n";
         ResultDB |= APInt::getOneBitSet(W, I);
       }
     }
     return std::error_code();
   }
-
-///  std::error_code testDemandedBits(const BlockPCs &BPCs,
-///                              const std::vector<InstMapping> &PCs,
-///                              Inst *LHS, APInt &ResultDB,
-///                              InstContext &IC) override {
-///    unsigned W = LHS->Width;
-///    std::map<Inst *, Inst *> InstCache;
-///    std::map<Block *, Block *> BlockCache;
-///    Inst *CopyLHS = getInstCopy(LHS, IC, InstCache, BlockCache, 0, true);
-///
-///    ResultDB = APInt::getNullValue(W);
-///
-///    for (unsigned I=0; I<W; I++) {
-///      llvm::outs() << "=================== Bit = " << I << " ============\n";
-///      std::map<Inst *, Inst *> InstCache;
-///      std::map<Block *, Block *> BlockCache;
-///      Inst *OrigLHS1 = getInstCopy(CopyLHS, IC, InstCache, BlockCache, 0, true);
-///      bool sfound = false;
-///      Inst *SetLHS = set_traverse_to_find_and_update_var(OrigLHS1, OrigLHS1, OrigLHS1, I, IC, 0, sfound);
-///
-///      llvm::outs() << "------- Set traversal tree is:\n";
-///      plain_traverse(SetLHS);
-///
-///      std::map<Inst *, Inst *> InstCache2;
-///      std::map<Block *, Block *> BlockCache2;
-///      Inst *OrigLHS2 = getInstCopy(CopyLHS, IC, InstCache2, BlockCache2, 0, true);
-///
-///      bool cfound = false;
-///      Inst *ClearLHS = clear_traverse_to_find_and_update_var(OrigLHS2, OrigLHS2, OrigLHS2, I, IC, 0, cfound);
-///      llvm::outs() << "******* Clear traversal tree is:\n";
-///      plain_traverse(ClearLHS);
-///
-///      if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC)) {
-///        // not-demanded
-///        llvm::outs() << "set: Bit = " << I << " = not-demanded\n";
-///        ResultDB = ResultDB;
-///      } else {
-///        // demanded
-///        llvm::outs() << "set: Bit = " << I << " = demanded\n";
-///        ResultDB |= APInt::getOneBitSet(W, I);
-///      }
-///      if (testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
-///        // not-demanded
-///        llvm::outs() << "clear: Bit = " << I << " = not-demanded\n";
-///        ResultDB = ResultDB;
-///      } else {
-///        // demanded
-///        llvm::outs() << "clear: Bit = " << I << " = demanded\n";
-///        ResultDB |= APInt::getOneBitSet(W, I);
-///      }
-/////      if (testDB(BPCs, PCs, CopyLHS, SetLHS, IC) && testDB(BPCs, PCs, CopyLHS, ClearLHS, IC)) {
-/////        // not-demanded
-/////        llvm::outs() << "Bit = " << I << " = not-demanded\n";
-/////        ResultDB = ResultDB;
-/////      } else {
-/////        // demanded
-/////        llvm::outs() << "Bit = " << I << " = demanded\n";
-/////        ResultDB |= APInt::getOneBitSet(W, I);
-/////      }
-///    }
-///    return std::error_code();
-///  }
 
   std::error_code infer(const BlockPCs &BPCs,
                         const std::vector<InstMapping> &PCs,
