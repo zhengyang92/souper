@@ -106,13 +106,13 @@ public:
   Inst * clear_traverse(Inst *node, unsigned bitPos, InstContext &IC, bool &found) {
     std::vector<Inst *> Ops;
     for (auto const &Op : node->Ops) {
-      Ops.push_back(set_traverse(Op, bitPos, IC, found));
+      Ops.push_back(clear_traverse(Op, bitPos, IC, found));
     }
 
     Inst *Copy = nullptr;
     if (node->K == Inst::Var) {
       found = true;
-      //llvm::outs() << "** found var in set_traversal **\n";
+      //llvm::outs() << "** found var in clear_traversal **\n";
       unsigned VarWidth = node->Width;
       APInt ClearBit = getClearedBit(bitPos, VarWidth); //1110
       Inst *SetMask = IC.getInst(Inst::And, VarWidth, {node, IC.getConst(ClearBit)}); //xxxx && 1110
