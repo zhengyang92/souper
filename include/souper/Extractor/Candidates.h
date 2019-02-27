@@ -39,11 +39,11 @@ class Value;
 namespace souper {
 
 struct CandidateReplacement {
-  CandidateReplacement(llvm::Instruction *Origin, InstMapping Mapping)
+  CandidateReplacement(llvm::Value *Origin, InstMapping Mapping)
   : Origin(Origin), Mapping(Mapping) {}
 
   /// The instruction from which the candidate was derived.
-  llvm::Instruction *Origin;
+  llvm::Value *Origin;
 
   /// The replacement mapping.
   InstMapping Mapping;

@@ -67,7 +67,14 @@ using namespace souper;
 
 void CandidateReplacement::printFunction(llvm::raw_ostream &Out) const {
   assert(Mapping.LHS->hasOrigin(Origin));
-  const Function *F = Origin->getParent()->getParent();
+  Function *F;
+  if (llvm::Argument *A = dyn_cast<llvm::Argument>(Origin))
+    F = A->getParent();
+  else if (llvm::Instruction *A = dyn_cast<llvm::Instruction>(Origin))
+    F = A->getParent()->getParent();
+  else {
+    llvm::report_fatal_error("other");
+  }
   std::string N;
   if (F->hasLocalLinkage()) {
     N = (F->getParent()->getModuleIdentifier() + ":" + F->getName()).str();
@@ -650,7 +657,7 @@ void ExprBuilder::addPC(BasicBlock *BB, BasicBlock *Pred,
   }
 }
 
-// Collect path conditions for a basic block. 
+// Collect path conditions for a basic block.
 // There are two kinds of path conditions, which correspond to
 // two Souper instruction kinds, pc and blockpc, respectively.
 // (1) The PC condition is added when the given predecessor of
@@ -659,8 +666,8 @@ void ExprBuilder::addPC(BasicBlock *BB, BasicBlock *Pred,
 //          B1
 //         /  \
 //       B2    B3
-//     The path conditions [B1->B2] and [B1->B3] will be added 
-//     to B2 and B3's PCs, respectively, because B1 can determine 
+//     The path conditions [B1->B2] and [B1->B3] will be added
+//     to B2 and B3's PCs, respectively, because B1 can determine
 //     the choice of either B2 or B3.
 // (2) The BlockPC condition handles cases where we don't know
 //     which predecessor would be chosen. In this case, we recursively
@@ -668,9 +675,9 @@ void ExprBuilder::addPC(BasicBlock *BB, BasicBlock *Pred,
 //     the PC condition (as defined above) is met. Then we add
 //     the this condition into the BlockPCs of the basic block from
 //     which we start our recursion. If a loop head or an entry
-//     point of an irreducible loop is encountered along any path, 
+//     point of an irreducible loop is encountered along any path,
 //     we stash the collected BlockPCs (if there is any) and return.
-//     The following examples (without loops) describe the idea. 
+//     The following examples (without loops) describe the idea.
 //     A simple example:
 //         B1
 //        /  \
@@ -682,7 +689,7 @@ void ExprBuilder::addPC(BasicBlock *BB, BasicBlock *Pred,
 //     Instead, we add whatever path conditions dominating B2 and
 //     B3 into B4's BlockPCs. In this simple case, we will have
 //     blockpc %B4, 0, s1, r1 // B1->B2
-//      
+//
 // Now consider a more complex example:
 //            B1          B2
 //           /  \        /  \
@@ -838,12 +845,23 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
 
   for (auto &BB : F) {
     std::unique_ptr<BlockCandidateSet> BCS(new BlockCandidateSet);
+    std::unordered_set<llvm::Value *> Visited;
     for (auto &I : BB) {
       // Harvest Uses (Operands)
       if (HarvestUses) {
-        std::unordered_set<llvm::Instruction *> Visited;
         for (auto &Op : I.operands()) {
           // TODO: support regular values
+          if (auto U = dyn_cast<Argument>(Op)){
+            if (U->getType()->isIntegerTy()) {
+              if(Visited.insert(U).second) {
+                Inst *In = EB.getFromUse(U);
+                In->HarvestKind = HarvestType::HarvestedFromUse;
+                In->HarvestFrom = &BB;
+                BCS->Replacements.emplace_back(U, InstMapping(In, 0));
+                assert(EB.get(U)->hasOrigin(U));
+              }
+            }
+          }
           if (auto U = dyn_cast<Instruction>(Op)){
             // If uses are in the same block with its def, give up
             if (U->getParent() == &BB)
@@ -853,7 +871,6 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
                 Inst *In = EB.getFromUse(U);
                 In->HarvestKind = HarvestType::HarvestedFromUse;
                 In->HarvestFrom = &BB;
-                EB.markExternalUses(In);
                 BCS->Replacements.emplace_back(U, InstMapping(In, 0));
                 assert(EB.get(U)->hasOrigin(U));
               }
