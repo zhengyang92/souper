@@ -75,12 +75,15 @@ bool SolveCandidateMap(llvm::raw_ostream &OS, CandidateMap &M,
       if (KVForStaticProfile) {
         std::string Str;
         llvm::raw_string_ostream Loc(Str);
-        Instruction *I = Cand.Origin;
-        I->getDebugLoc().print(Loc);
-        std::string HField = "sprofile " + Loc.str();
-        ReplacementContext Context;
-        KVForStaticProfile->hIncrBy(GetReplacementLHSString(Cand.BPCs,
+        Value *V = Cand.Origin;
+        if (llvm::Instruction *I = dyn_cast<llvm::Instruction>(V)) {
+          I->getDebugLoc().print(Loc);
+          std::string HField = "sprofile " + Loc.str();
+          ReplacementContext Context;
+          KVForStaticProfile->hIncrBy(GetReplacementLHSString(Cand.BPCs,
             Cand.PCs, Cand.Mapping.LHS, Context), HField, 1);
+        }
+        // TODO sprofile for argument
       }
 
       Inst *RHS = 0;
@@ -139,46 +142,48 @@ bool CheckCandidateMap(llvm::Module &Mod, CandidateMap &M, Solver *S,
       }
       llvm::APInt ActualVal = Cand.Mapping.RHS->Val;
 
-      llvm::Instruction *Inst = Cand.Origin;
-      llvm::MDNode *ExpectedMD = Inst->getMetadata(ExpectedID);
-      if (!ExpectedMD) {
-        llvm::errs() << "instruction:\n";
-        Inst->print(llvm::errs(), /*IsForDebug=*/true);
-        llvm::errs() << "\n";
-        llvm::errs() << "unexpected simplification:\n";
-        Cand.printFunction(llvm::errs());
-        Cand.print(llvm::errs());
-        OK = false;
-        continue;
-      }
+      // TODO: support llvm::Argument
+      if (llvm::Instruction *Inst = cast<llvm::Instruction>(Cand.Origin)) {
+        llvm::MDNode *ExpectedMD = Inst->getMetadata(ExpectedID);
+        if (!ExpectedMD) {
+          llvm::errs() << "instruction:\n";
+          Inst->print(llvm::errs(), /*IsForDebug=*/true);
+          llvm::errs() << "\n";
+          llvm::errs() << "unexpected simplification:\n";
+          Cand.printFunction(llvm::errs());
+          Cand.print(llvm::errs());
+          OK = false;
+          continue;
+        }
 
-      if (ExpectedMD->getNumOperands() != 1 ||
-          !mdconst::hasa<ConstantInt>(ExpectedMD->getOperand(0))) {
-        llvm::errs() << "instruction:\n";
-        Inst->print(llvm::errs(), /*IsForDebug=*/true);
-        llvm::errs() << "\n";
-        llvm::errs() << "invalid metadata\n";
-        OK = false;
-        continue;
-      }
-      llvm::APInt ExpectedVal =
-        mdconst::extract<ConstantInt>(ExpectedMD->getOperand(0))->getValue();
-      Inst->setMetadata(ExpectedID, 0);
-      if (ExpectedVal.getBitWidth() != ActualVal.getBitWidth()) {
-        llvm::errs() << "metadata width doesn't match value width\n";
-        OK = false;
-        continue;
-      }
-      if (ExpectedVal != ActualVal) {
-        llvm::errs() << "instruction:\n";
-        Inst->print(llvm::errs(), /*IsForDebug=*/true);
-        llvm::errs() << "\n";
-        llvm::errs() << "unexpected simplification, wanted " << ExpectedVal
-                     << ":\n";
-        Cand.printFunction(llvm::errs());
-        Cand.print(llvm::errs());
-        OK = false;
-        continue;
+        if (ExpectedMD->getNumOperands() != 1 ||
+            !mdconst::hasa<ConstantInt>(ExpectedMD->getOperand(0))) {
+          llvm::errs() << "instruction:\n";
+          Inst->print(llvm::errs(), /*IsForDebug=*/true);
+          llvm::errs() << "\n";
+          llvm::errs() << "invalid metadata\n";
+          OK = false;
+          continue;
+        }
+        llvm::APInt ExpectedVal =
+          mdconst::extract<ConstantInt>(ExpectedMD->getOperand(0))->getValue();
+        Inst->setMetadata(ExpectedID, 0);
+        if (ExpectedVal.getBitWidth() != ActualVal.getBitWidth()) {
+          llvm::errs() << "metadata width doesn't match value width\n";
+          OK = false;
+          continue;
+        }
+        if (ExpectedVal != ActualVal) {
+          llvm::errs() << "instruction:\n";
+          Inst->print(llvm::errs(), /*IsForDebug=*/true);
+          llvm::errs() << "\n";
+          llvm::errs() << "unexpected simplification, wanted " << ExpectedVal
+                       << ":\n";
+          Cand.printFunction(llvm::errs());
+          Cand.print(llvm::errs());
+          OK = false;
+          continue;
+        }
       }
     }
   }

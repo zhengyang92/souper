@@ -101,9 +101,13 @@ public:
   }
 
   void dynamicProfile(Function *F, CandidateReplacement &Cand) {
+    // TODO: support llvm::Argument
+    if (!isa<llvm::Instruction>(Cand.Origin))
+      return;
+    llvm::Instruction *I = cast<llvm::Instruction>(Cand.Origin);
     std::string Str;
     llvm::raw_string_ostream Loc(Str);
-    Cand.Origin->getDebugLoc().print(Loc);
+    I->getDebugLoc().print(Loc);
     ReplacementContext Context;
     std::string LHS = GetReplacementLHSString(Cand.BPCs, Cand.PCs,
                                               Cand.Mapping.LHS, Context);
@@ -155,12 +159,12 @@ public:
 
     appendToGlobalCtors(*M, Ctor, 0);
 
-    BasicBlock::iterator BI(Cand.Origin);
+    BasicBlock::iterator BI(I);
     while (isa<PHINode>(*BI))
       ++BI;
     new AtomicRMWInst(AtomicRMWInst::Add, CntVar,
                       ConstantInt::get(C, APInt(64, 1)), AtomicOrdering::Monotonic,
-                      SyncScope::System, Cand.Origin);
+                      SyncScope::System, I);
   }
 
   Value *getValue(Inst *I, Instruction *ReplacedInst,
@@ -392,14 +396,17 @@ public:
     for (auto &Cand : CandMap) {
 
       if (StaticProfile) {
-        std::string Str;
-        llvm::raw_string_ostream Loc(Str);
-        Cand.Origin->getDebugLoc().print(Loc);
-        std::string HField = "sprofile " + Loc.str();
-        ReplacementContext Context;
-        KV->hIncrBy(GetReplacementLHSString(Cand.BPCs, Cand.PCs,
-                                            Cand.Mapping.LHS,
-                                            Context), HField, 1);
+        // TODO: support StaticProfile for llvm::Argument
+        if (auto I = dyn_cast<llvm::Instruction>(Cand.Origin)) {
+          std::string Str;
+          llvm::raw_string_ostream Loc(Str);
+          I->getDebugLoc().print(Loc);
+          std::string HField = "sprofile " + Loc.str();
+          ReplacementContext Context;
+          KV->hIncrBy(GetReplacementLHSString(Cand.BPCs, Cand.PCs,
+                                              Cand.Mapping.LHS,
+                                              Context), HField, 1);
+        }
       }
       if (DynamicProfileAll) {
         dynamicProfile(F, Cand);
@@ -419,12 +426,21 @@ public:
       if (!Cand.Mapping.RHS)
         continue;
 
-      Instruction *I = Cand.Origin;
+      Value *V = Cand.Origin;
       assert(Cand.Mapping.LHS->hasOrigin(I));
-      IRBuilder<> Builder(I);
 
-      Value *NewVal = getValue(Cand.Mapping.RHS, I, EBC, DT,
-                               ReplacedValues, Builder, F->getParent());
+      Value *NewVal;
+      if (llvm::Instruction *I = dyn_cast<llvm::Instruction>(V)) {
+        IRBuilder<> Builder(I);
+
+        NewVal = getValue(Cand.Mapping.RHS, I, EBC, DT,
+                          ReplacedValues, Builder, F->getParent());
+      } else if (llvm::Argument *I = dyn_cast<llvm::Argument>(V)) {
+        IRBuilder<> Builder(&(F->getEntryBlock()));
+        NewVal = getValue(Cand.Mapping.RHS, nullptr, EBC, DT,
+                          ReplacedValues, Builder, F->getParent());
+      }
+
 
       // if LHS comes from use, then NewVal should be a constant
       assert(Cand.Mapping.LHS->HarvestKind != HarvestType::HarvestedFromUse ||
@@ -465,9 +481,13 @@ public:
         }
         errs() << "\n";
         errs() << "; Replacing \"";
-        I->print(errs());
+        V->print(errs());
         errs() << "\"\n; from \"";
-        I->getDebugLoc().print(errs());
+        if (Instruction *I = dyn_cast<Instruction>(V)) {
+          I->getDebugLoc().print(errs());
+        } else {
+          errs() << "argument";
+        }
         errs() << "\"\n; with \"";
         NewVal->print(errs());
         errs() << "\" in:\n\"";
@@ -480,12 +500,13 @@ public:
       if (DynamicProfile)
         dynamicProfile(F, Cand);
 
+
       if (Cand.Mapping.LHS->HarvestKind == HarvestType::HarvestedFromDef) {
-        I->replaceAllUsesWith(NewVal);
+        V->replaceAllUsesWith(NewVal);
         Changed = true;
       } else {
-        for (llvm::Value::use_iterator UI = I->use_begin();
-             UI != I->use_end(); ) {
+        for (llvm::Value::use_iterator UI = V->use_begin();
+             UI != V->use_end(); ) {
           llvm::Use &U = *UI;
           ++UI;
           // TODO: Handle general values, not only instructions

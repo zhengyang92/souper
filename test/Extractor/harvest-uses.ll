@@ -33,7 +33,7 @@ l2:
 ; TODO: support harvesting from not only instructions, but values
 define i1 @fn3(i1) {
   br i1 %0, label %l1, label %l2
-
+; CHECK: fwafw
 l1:
   ret i1 %0
 
