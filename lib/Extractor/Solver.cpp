@@ -74,6 +74,20 @@ public:
   BaseSolver(std::unique_ptr<SMTLIBSolver> SMTSolver, unsigned Timeout)
       : SMTSolver(std::move(SMTSolver)), Timeout(Timeout) {}
 
+  unsigned findWidthOfVar(Inst *node, bool &found) {
+    unsigned W = 0;
+    if (node->K == Inst::Var) {
+      //llvm::outs() << "width = " << node->Width << "\n";
+      found = true;
+      return node->Width;
+    }
+    for (auto const &Op : node->Ops) {
+      if (found) break;
+      W = findWidthOfVar(Op, found);
+    }
+    return W;
+  }
+
   Inst * set_traverse(Inst *node, unsigned bitPos, InstContext &IC, bool &found) {
     std::vector<Inst *> Ops;
     for (auto const &Op : node->Ops) {
@@ -83,9 +97,9 @@ public:
     Inst *Copy = nullptr;
     if (node->K == Inst::Var) {
       found = true;
-      //llvm::outs() << "** found var in set_traversal **\n";
+//      llvm::outs() << "** found var in set_traversal **\n";
       unsigned VarWidth = node->Width;
-      //llvm::outs() << "*********************** var width = " << VarWidth << "\n";
+//      llvm::outs() << "*********************** var width = " << VarWidth << "\n";
       APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
       Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
 
@@ -184,9 +198,12 @@ public:
     std::map<Inst *, Inst *> InstCache;
     std::map<Block *, Block *> BlockCache;
 
-    ResultDB = APInt::getNullValue(W);
+    //ResultDB = APInt::getNullValue(W);
+    bool varFound = false;
+    unsigned WidthVar = findWidthOfVar(LHS, varFound);
+    ResultDB = APInt::getNullValue(WidthVar);
 
-    for (unsigned I=0; I<W; I++) {
+    for (unsigned I=0; I<WidthVar; I++) {
 
       bool sfound = false;
       Inst *SetLHS = set_traverse(LHS, I, IC, sfound);
@@ -212,12 +229,12 @@ public:
 
       if (testDB(BPCs, PCs, LHS, SetLHS, IC) && testDB(BPCs, PCs, LHS, ClearLHS, IC)) {
         // not-demanded
-        //llvm::outs() << "********** Bit = " << I << " = not-demanded\n";
+//        llvm::outs() << "********** Bit = " << I << " = not-demanded\n";
         ResultDB = ResultDB;
       } else {
         // demanded
-        //llvm::outs() << "*********** Bit = " << I << " = demanded\n";
-        ResultDB |= APInt::getOneBitSet(W, I);
+//        llvm::outs() << "*********** Bit = " << I << " = demanded\n";
+        ResultDB |= APInt::getOneBitSet(WidthVar, I);
       }
     }
     return std::error_code();
