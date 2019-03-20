@@ -144,7 +144,7 @@ public:
     Inst *Mask = IC.getConst(Zeros | Ones);
     InstMapping Mapping(IC.getInst(Inst::And, W, { LHS, Mask }), IC.getConst(Ones));
     bool IsSat;
-    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
+    //Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
     std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                   IsSat, 0, 0, Timeout);
     if (EC)
@@ -168,6 +168,18 @@ public:
       APInt OneGuess = Ones | APInt::getOneBitSet(W, I);
       if (testKnown(BPCs, PCs, Zeros, OneGuess, LHS, IC))
         Ones = OneGuess;
+    }
+    // now verify if a bit is not guessed as zero and
+    // it is not-demanded, conclude it as known zero.
+    APInt ConstOne = APInt(W, 1);
+    for (unsigned J=0; J<W; J++) {
+      if (!LHS->DemandedBits.isAllOnesValue()) {
+        if (!((LHS->DemandedBits.getHiBits(W-J) & ConstOne).getBoolValue()) &&
+            !((Zeros.getHiBits(W-J) & ConstOne).getBoolValue())) {
+          // make a zero guess
+          Zeros = Zeros | APInt::getOneBitSet(W, J);
+        }
+      }
     }
     return std::error_code();
   }
