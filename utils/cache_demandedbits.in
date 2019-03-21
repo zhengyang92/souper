@@ -256,25 +256,25 @@ sub go($) {
     if ($sk ne $lk) {
 	$print = 1;
 	die unless length($lk) == length($sk);
-	my $llvm_stronger = 0;
-	my $souper_stronger = 0;
-	for (my $i=0; $i<length($lk); $i++) {
-	    if ((substr($sk,$i,1) eq "1") && (substr($lk,$i,1) eq "0")) {
-		$llvm_stronger = 1;
-	    }
-	    if ((substr($lk,$i,1) eq "1") && (substr($sk,$i,1) eq "0")) {
-		$souper_stronger = 1;
-	    }
-	}
-	if ($llvm_stronger && $souper_stronger) {
-	    $ret .= "neither is stronger";
-	} elsif ($llvm_stronger) {
-	    $ret .= "llvm is stronger";
-	} elsif ($souper_stronger) {
-	    $ret .= "souper is stronger";
-	} else {
-	    die;
-	}
+#	my $llvm_stronger = 0;
+#	my $souper_stronger = 0;
+#	for (my $i=0; $i<length($lk); $i++) {
+#	    if ((substr($sk,$i,1) eq "1") && (substr($lk,$i,1) eq "0")) {
+#		$llvm_stronger = 1;
+#	    }
+#	    if ((substr($lk,$i,1) eq "1") && (substr($sk,$i,1) eq "0")) {
+#		$souper_stronger = 1;
+#	    }
+#	}
+#	if ($llvm_stronger && $souper_stronger) {
+#	    $ret .= "neither is stronger";
+#	} elsif ($llvm_stronger) {
+#	    $ret .= "llvm is stronger";
+#	} elsif ($souper_stronger) {
+#	    $ret .= "souper is stronger";
+#	} else {
+#	    die;
+#	}
 	$ret .= "\n";
     }
     $ret .= "\n";

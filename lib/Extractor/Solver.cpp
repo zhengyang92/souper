@@ -97,9 +97,9 @@ public:
     Inst *Copy = nullptr;
     if (node->K == Inst::Var) {
       found = true;
-//      llvm::outs() << "** found var in set_traversal **\n";
+      //llvm::outs() << "** found var in set_traversal **\n";
       unsigned VarWidth = node->Width;
-//      llvm::outs() << "*********************** var width = " << VarWidth << "\n";
+      //llvm::outs() << "*********************** var width = " << VarWidth << "\n";
       APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
       Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
 
@@ -201,6 +201,14 @@ public:
     //ResultDB = APInt::getNullValue(W);
     bool varFound = false;
     unsigned WidthVar = findWidthOfVar(LHS, varFound);
+    /* hashmap of <var, width>
+     for each var width {
+        resultDB = initialize with current width
+        for each bit of current varwidth {
+          set_...(); 
+          clear_..();
+        }
+     } */
     ResultDB = APInt::getNullValue(WidthVar);
 
     for (unsigned I=0; I<WidthVar; I++) {
