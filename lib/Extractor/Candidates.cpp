@@ -850,7 +850,7 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
             Inst *ConstZero = EB.get(BO->getOperand(1));
             if (!ConstZero->Val.getBoolValue()) {
               APInt DemandedBitsVal = DB->getDemandedBits(&I);
-              llvm::outs() << "known demanded-bits: " << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
+              llvm::outs() << "demanded-bits from compiler: " << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
             }
           }
         }
