@@ -36,7 +36,6 @@ metadataStr = ""
 functionDeclStr = ""
 functionDeclCount = 0
 truncCount = 0
-addInst=0
 
 # souper IR -> LLVM inst map
 instmap = {
