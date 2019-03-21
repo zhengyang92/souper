@@ -720,7 +720,7 @@ def printFuncHeader():
         print "@glob_" + reg[1:] + "_nonZero = external global " + widths[reg]
         print "@glob_" + reg[1:] + "_signBits = external global " + widths[reg]
         print "@glob_" + reg[1:] + "_range = external global " + widths[reg]
-    print "@glob_" + str(db_counter) + "_demandedBits = external global " + widths[reg]
+    print "@glob_" + str(db_counter) + "_demandedBits = external global " + cand[1]
     for decl in intrdecl.values():
         print decl
     print "\ndefine " + cand[1] + " @foo(",
