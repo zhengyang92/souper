@@ -74,19 +74,14 @@ public:
   BaseSolver(std::unique_ptr<SMTLIBSolver> SMTSolver, unsigned Timeout)
       : SMTSolver(std::move(SMTSolver)), Timeout(Timeout) {}
 
-  void findWidthOfVar(Inst *node, bool &found, std::vector<unsigned> &var_vect) {
-    //unsigned W = 0;
+  void findVarsAndWidth(Inst *node, std::map<std::string, unsigned> &var_vect) {
     if (node->K == Inst::Var) {
-      //found = true;
-      var_vect.push_back(node->Width);
-      //return node->Width;
+      std::string name = "%" + node->Name;
+      var_vect[name] = node->Width;
     }
     for (auto const &Op : node->Ops) {
-      //if (found) break;
-      findWidthOfVar(Op, found, var_vect);
+      findVarsAndWidth(Op, var_vect);
     }
-    //return W;
-    //return var_vect;
   }
 
   Inst * set_traverse(Inst *node, unsigned bitPos, InstContext &IC, bool &found) {
@@ -190,23 +185,26 @@ public:
 
   std::error_code testDemandedBits(const BlockPCs &BPCs,
                               const std::vector<InstMapping> &PCs,
-                              Inst *LHS, std::vector<APInt> &ResDB_vect,
+                              Inst *LHS, std::map<std::string, APInt> &ResDB_vect,
                               InstContext &IC) override {
     unsigned W = LHS->Width;
     std::map<Inst *, Inst *> InstCache;
     std::map<Block *, Block *> BlockCache;
 
-    bool varFound = false;
-    std::vector<unsigned> vars_vect;
-    findWidthOfVar(LHS, varFound, vars_vect);
-//    std::vector<llvm::APInt> ResDB_vect;
+    std::map<std::string, unsigned> vars_vect;
+    findVarsAndWidth(LHS, vars_vect);
+
     // for each var
-    for (unsigned i = 0; i<vars_vect.size(); ++i) {
+    for (std::map<std::string,unsigned>::iterator it = vars_vect.begin();
+         it != vars_vect.end(); ++it) {
+
       // intialize ResultDB
-       APInt ResultDB = APInt::getNullValue(vars_vect[i]);
+       std::string var_name = it->first;
+       unsigned var_width = vars_vect[var_name];
+       APInt ResultDB = APInt::getNullValue(var_width);
 
       // for each bit of var
-      for (unsigned I=0; I<vars_vect[i]; I++) {
+      for (unsigned I=0; I < var_width; I++) {
         bool sfound = false;
         Inst *SetLHS = set_traverse(LHS, I, IC, sfound);
 /*
@@ -231,15 +229,13 @@ public:
 
         if (testDB(BPCs, PCs, LHS, SetLHS, IC) && testDB(BPCs, PCs, LHS, ClearLHS, IC)) {
           // not-demanded
-//          llvm::outs() << "********** Bit = " << I << " = not-demanded\n";
           ResultDB = ResultDB;
         } else {
           // demanded
-//          llvm::outs() << "*********** Bit = " << I << " = demanded\n";
-          ResultDB |= APInt::getOneBitSet(vars_vect[i], I);
+          ResultDB |= APInt::getOneBitSet(var_width, I);
         }
       }
-      ResDB_vect.push_back(ResultDB);
+      ResDB_vect[var_name] = ResultDB;
     }
     return std::error_code();
   }
@@ -550,7 +546,7 @@ public:
 
   std::error_code testDemandedBits(const BlockPCs &BPCs,
                             const std::vector<InstMapping> &PCs,
-                            Inst *LHS, std::vector<APInt> &DB_vect,
+                            Inst *LHS, std::map<std::string,APInt> &DB_vect,
                             InstContext &IC) override {
     return UnderlyingSolver->testDemandedBits(BPCs, PCs, LHS, DB_vect, IC);
   }
@@ -619,7 +615,7 @@ public:
 
   std::error_code testDemandedBits(const BlockPCs &BPCs,
                             const std::vector<InstMapping> &PCs,
-                            Inst *LHS, std::vector<APInt> &DB_vect,
+                            Inst *LHS, std::map<std::string, APInt> &DB_vect,
                             InstContext &IC) override {
     return UnderlyingSolver->testDemandedBits(BPCs, PCs, LHS, DB_vect, IC);
   }

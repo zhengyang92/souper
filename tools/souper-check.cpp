@@ -82,16 +82,17 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
   int Success = 0, Fail = 0, Error = 0;
   for (auto Rep : Reps) {
     if (InferDemandedBits) {
-      //APInt DB;
-      std::vector<APInt> DB_vect;
+      std::map<std::string, APInt> DB_vect;
       if (std::error_code EC = S->testDemandedBits(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
                                             DB_vect, IC)) {
-                                            //DB, IC)) {
         llvm::errs() << EC.message() << '\n';
       }
-      for (unsigned j=0; j<DB_vect.size(); ++j) {
-        std::string s = Inst::getDemandedBitsString(DB_vect[j]);
-        llvm::outs() << "demanded-bits from souper: " << s << "\n";
+      for (std::map<std::string,APInt>::iterator it = DB_vect.begin();
+           it != DB_vect.end(); ++it) {
+        std::string var_name = it->first;
+        llvm::APInt DB_for_var = DB_vect[var_name];
+        std::string s = Inst::getDemandedBitsString(DB_for_var);
+        llvm::outs() << "demanded-bits from souper for " << var_name << " : "<< s << "\n";
       }
       return 0;
     }

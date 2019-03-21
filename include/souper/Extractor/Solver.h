@@ -42,7 +42,7 @@ public:
   virtual
   std::error_code testDemandedBits(const BlockPCs &BPCs,
                                    const std::vector<InstMapping> &PCs,
-                                   Inst *LHS, std::vector<llvm::APInt> &DB_vect,
+                                   Inst *LHS, std::map<std::string, llvm::APInt> &DB_vect,
                                    InstContext &IC) = 0;
 };
 
