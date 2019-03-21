@@ -554,9 +554,7 @@ def printFuncHeader():
     global functionDeclCount
     global cnt
     dfa = 0
-    print "dfa == " + str(dfa)
     for i, reg in enumerate(argmap.values()):
-        print "arg = " + str(i)
         if reg in knownzeros:
             dfa = 1
             regnum = reg[1:]
@@ -616,7 +614,6 @@ def printFuncHeader():
             regtmps[reg] = name
             masks = "  " + old + " = and " + w + " " + name + ", " + str(nonNegative[reg]) + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_nonNegative\n" + masks
-            print "dfa in nonNeg== " + str(dfa)
         if reg in powerTwo:
             dfa = 1
             regnum = reg[1:]
@@ -657,9 +654,17 @@ def printFuncHeader():
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_signBits\n" + masks
             truncCount += 1
         if reg in lower or reg in upper:
+            dfa = 1
             regnum = reg[1:]
             w = widths[reg]
-            old = regtmps[reg]
+            #old = regtmps[reg]
+            org = regtmps[reg]
+            if regtmps[reg] == reg:
+                old = "%tmp_" + str(cnt)
+                addreg = old
+            else:
+                old = regtmps[reg]
+            cnt += 1
             name = "%t8_" + regnum
             regtmps[reg] = name
             ptr = "%ptr_" + str(MDRangePtr)
@@ -696,11 +701,9 @@ def printFuncHeader():
             MDRangePtr += 1
             functionDeclStr += "declare void @fun_" + str(functionDeclCount) + "(" + w + "* " + ptr + ")\n"
             functionDeclCount += 1
-        print "check dfa == " + str(dfa)
         if dfa == 1:
             masks = masks + "\n" + "  " + reg + " = add " + widths[reg] + " " + addreg + ", 0" + "\n"
             dfa = 0
-            print "reset dfa == " + str(dfa)
         else:
             addnewreg = "%add_" + reg[1:]
             regtmps[reg] = addnewreg
