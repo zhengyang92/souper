@@ -20,6 +20,7 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/KnownBits.h"
 #include "souper/Extractor/Solver.h"
 #include "souper/Infer/AliveDriver.h"
 #include "souper/Infer/ExhaustiveSynthesis.h"
@@ -303,7 +304,7 @@ public:
           Ante = IC.getInst(Inst::And, 1, {Ante, Eq});
         }
 
-        AliveDriver Synthesizer(LHS, Ante);
+        AliveDriver Synthesizer(LHS, Ante, IC);
         auto ConstantMap = Synthesizer.synthesizeConstants(I);
         if (ConstantMap.find(I) != ConstantMap.end()) {
           RHS = IC.getConst(ConstantMap[I]);
@@ -470,6 +471,41 @@ public:
     }
   }
 
+  bool testKnown(const BlockPCs &BPCs,
+		 const std::vector<InstMapping> &PCs,
+		 APInt &Zeros, APInt &Ones, Inst *LHS,
+		 InstContext &IC) {
+    InstMapping Mapping(IC.getInst(Inst::And, LHS->Width,
+                                   { IC.getConst(Zeros | Ones), LHS }),
+                        IC.getConst(Ones));
+    bool IsSat;
+    auto Q = BuildQuery(IC, BPCs, PCs, Mapping, 0);
+    std::error_code EC = SMTSolver->isSatisfiable(Q, IsSat, 0, 0, Timeout);
+    if (EC)
+      return false;
+    return !IsSat;
+  }
+
+  llvm::KnownBits findKnownBitsUsingSolver(const BlockPCs &BPCs,
+                                           const std::vector<InstMapping> &PCs,
+                                           Inst *LHS, InstContext &IC) override {
+    unsigned W = LHS->Width;
+    auto R = llvm::KnownBits(W);
+    for (unsigned Pos = 0; Pos < W; Pos++) {
+      APInt ZeroGuess = R.Zero | APInt::getOneBitSet(W, Pos);
+      if (testKnown(BPCs, PCs, ZeroGuess, R.One, LHS, IC)) {
+        R.Zero = ZeroGuess;
+	continue;
+      }
+      APInt OneGuess = R.One | APInt::getOneBitSet(W, Pos);
+      if (testKnown(BPCs, PCs, R.Zero, OneGuess, LHS, IC)) {
+	R.One = OneGuess;
+        continue;
+      }
+    }
+    return R;
+  }
+
   std::string getName() override {
     return SMTSolver->getName();
   }
@@ -540,6 +576,12 @@ public:
     }
   }
 
+  llvm::KnownBits findKnownBitsUsingSolver(const BlockPCs &BPCs,
+                                           const std::vector<InstMapping> &PCs,
+                                           Inst *LHS, InstContext &IC) override {
+    return UnderlyingSolver->findKnownBitsUsingSolver(BPCs, PCs, LHS, IC);
+  }
+
   std::string getName() override {
     return UnderlyingSolver->getName() + " + internal cache";
   }
@@ -607,6 +649,12 @@ public:
     // N.B. we decided that since the important clients have moved to infer(),
     // we'll no longer support external caching for isValid()
     return UnderlyingSolver->isValid(IC, BPCs, PCs, Mapping, IsValid, Model);
+  }
+
+  llvm::KnownBits findKnownBitsUsingSolver(const BlockPCs &BPCs,
+                                           const std::vector<InstMapping> &PCs,
+                                           Inst *LHS, InstContext &IC) override {
+    return UnderlyingSolver->findKnownBitsUsingSolver(BPCs, PCs, LHS, IC);
   }
 
   std::string getName() override {

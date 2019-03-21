@@ -16,8 +16,8 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/Support/CommandLine.h"
 #include "souper/Infer/AliveDriver.h"
-#include "souper/Infer/DataflowPruning.h"
 #include "souper/Infer/ExhaustiveSynthesis.h"
+#include "souper/Infer/Pruning.h"
 
 #include <queue>
 #include <functional>
@@ -33,7 +33,7 @@ using namespace souper;
 using namespace llvm;
 
 static const std::vector<Inst::Kind> UnaryOperators = {
-  Inst::CtPop, Inst::BSwap, Inst::Cttz, Inst::Ctlz
+  Inst::CtPop, Inst::BSwap, Inst::BitReverse, Inst::Cttz, Inst::Ctlz
 };
 
 static const std::vector<Inst::Kind> BinaryOperators = {
@@ -65,6 +65,9 @@ namespace {
     cl::init(false));
   static cl::opt<bool> EnableDataflowPruning("souper-dataflow-pruning",
     cl::desc("Enable pruning based on dataflow analysis (default=false)"),
+    cl::init(false));
+  static cl::opt<bool> SynthesisConstWithCegisLoop("souper-synthesis-const-with-cegis",
+    cl::desc("Synthesis constants with CEGIS (default=false)"),
     cl::init(false));
 }
 
@@ -176,6 +179,7 @@ struct SynthesisContext {
   InstContext &IC;
   SMTLIBSolver *SMTSolver;
   Inst *LHS;
+  Inst *LHSUB;
   const std::vector<InstMapping> &PCs;
   const BlockPCs &BPCs;
   unsigned Timeout;
@@ -202,23 +206,15 @@ void getGuesses(std::vector<Inst *> &Guesses,
         if (Comp->K == Inst::ReservedConst)
           continue;
 
-        if (Comp->K == Inst::ReservedInst && Comp->Width == 0)
-          Comp->Width = Width;
+        if (K == Inst::BSwap && Width % 16 != 0) {
+          continue;
+        }
 
-        switch (K) {
-        case Inst::BSwap:
-          if (Width != 16 && Width != 32 && Width != 64) {
-            continue;
-          }
-        case Inst::CtPop:
-        case Inst::Ctlz:
-        case Inst::Cttz:
-          if (Width != 8 && Width != 16 && Width != 32 &&
-              Width != 64 && Width != 256) {
-            continue;
-          }
-        default:
-          break;
+        if (Comp->K == Inst::ReservedInst && Comp->Width == 0) {
+          auto V = IC.getReservedInst(Width);
+          auto N = IC.getInst(K, Width, { V });
+          addGuess(N, LHSCost, PartialGuesses, TooExpensive);
+          continue;
         }
 
         for (auto V : matchWidth(Comp, Width, IC)) {
@@ -358,12 +354,15 @@ void getGuesses(std::vector<Inst *> &Guesses,
             if (L->K == Inst::ReservedConst)
               continue;
 
-            if (L->K == Inst::ReservedInst && L->Width == 0)
-              L->Width = 1;
+            Inst *V;
+            if (L->K == Inst::ReservedInst && L->Width == 0) {
+              V = IC.getReservedInst(1);
+            } else {
+              V = matchWidth(L, 1, IC)[0];
+            }
 
-            auto MatchedWidthL = matchWidth(L, 1, IC);
             auto SelectInst = IC.getInst(Inst::Select,
-                                         Width, { MatchedWidthL[0], V1i, V2i });
+                                         Width, { V, V1i, V2i });
             addGuess(SelectInst, LHSCost, PartialGuesses, TooExpensive);
           }
         }
@@ -406,6 +405,7 @@ void getGuesses(std::vector<Inst *> &Guesses,
 }
 
 APInt getNextInputVal(Inst *Var,
+                      Inst *LHSUB,
                       const BlockPCs &BPCs,
                       const std::vector<InstMapping> &PCs,
                       std::map<Inst *, std::vector<llvm::APInt>> &TriedVars,
@@ -423,9 +423,12 @@ APInt getNextInputVal(Inst *Var,
 
   HasNextInputValue = true;
   Inst *Ante = IC.getConst(APInt(1, true));
+  Ante = IC.getInst(Inst::And, 1, {Ante, LHSUB});
   for (auto PC : PCs ) {
     Inst* Eq = IC.getInst(Inst::Eq, 1, {PC.LHS, PC.RHS});
+    Inst* PCUB = getUBInstCondition(IC, Eq);
     Ante = IC.getInst(Inst::And, 1, {Ante, Eq});
+    Ante = IC.getInst(Inst::And, 1, {Ante, PCUB});
   }
 
   // If a variable is neither found in PCs or TriedVar, return APInt(0)
@@ -460,7 +463,7 @@ APInt getNextInputVal(Inst *Var,
       // unsat, then clear the state and call the getNextInputVal() again to
       // get a new guess
       TriedVars.erase(Var);
-      return getNextInputVal(Var, BPCs, PCs, TriedVars, IC,
+      return getNextInputVal(Var, LHSUB, BPCs, PCs, TriedVars, IC,
                              SMTSolver, Timeout, HasNextInputValue);
     } else {
       // No guess record for Var found and query tells unsat, we can conclude
@@ -483,14 +486,14 @@ APInt getNextInputVal(Inst *Var,
   llvm::report_fatal_error("Model does not contain the guess input variable");
 }
 
-Inst *findConst(souper::Inst *I, std::string ConstName,
+Inst *findConst(souper::Inst *I,
                 std::set<const Inst *> &Visited) {
-  if (I->Name == ConstName) {
+  if (I->Name.find(ReservedConstPrefix) != std::string::npos) {
     return I;
   } else {
     for (auto &&Op : I->Ops) {
       if (Visited.find(Op) == Visited.end()) {
-        auto Ret = findConst(Op, ConstName, Visited);
+        auto Ret = findConst(Op, Visited);
         if (Ret) {
           return Ret;
         }
@@ -553,28 +556,38 @@ std::error_code synthesizeWithAlive(SynthesisContext &SC, Inst *&RHS,
     Ante = SC.IC.getInst(Inst::And, 1, {Ante, Eq});
   }
 
-  AliveDriver Verifier(SC.LHS, Ante);
+  AliveDriver Verifier(SC.LHS, Ante, SC.IC);
   for (auto &&G : Guesses) {
     std::set<const Inst *> Visited;
-    auto C = findConst(G, "reservedconst_0", Visited);
+    auto C = findConst(G, Visited);
     if (!C) {
       if (Verifier.verify(G)) {
         RHS = G;
         return EC;
       }
     } else {
-      auto ConstMap = Verifier.synthesizeConstants(G);
-      // TODO: Counterexample guided loop or UB constraints in query
-
-      auto GWithC = getInstCopy(G, SC.IC, InstCache, BlockCache, &ConstMap,
-                                /*CloneVars=*/false);
-      if (Verifier.verify(GWithC)) {
+      if (SynthesisConstWithCegisLoop) {
+        auto ConstMap = Verifier.synthesizeConstantsWithCegis(G, SC.IC);
+        if (ConstMap.empty())
+          continue;
+        auto GWithC = getInstCopy(G, SC.IC, InstCache, BlockCache, &ConstMap,
+                                  /*CloneVars=*/false);
         RHS = GWithC;
         return EC;
       } else {
-        continue;
+        auto ConstMap = Verifier.synthesizeConstants(G);
+        // TODO: Counterexample guided loop or UB constraints in query
+
+        auto GWithC = getInstCopy(G, SC.IC, InstCache, BlockCache, &ConstMap,
+                                  /*CloneVars=*/false);
+        if (Verifier.verify(GWithC)) {
+          RHS = GWithC;
+          return EC;
+        } else {
+          continue;
+        }
+        return EC;
       }
-      return EC;
     }
   }
   return EC;
@@ -633,7 +646,7 @@ bool isBigQuerySat(SynthesisContext &SC,
   return BigQueryIsSat;
 }
 
-void generateAndSortGuesses(InstContext &IC, Inst *LHS,
+void generateAndSortGuesses(InstContext &IC, Inst *LHS, SMTLIBSolver *Solver,
                             std::vector<Inst *> &Guesses) {
   std::vector<Inst *> Inputs;
   findCands(LHS, Inputs, /*WidthMustMatch=*/false, /*FilterVars=*/false, MaxLHSCands);
@@ -644,11 +657,11 @@ void generateAndSortGuesses(InstContext &IC, Inst *LHS,
 
   int TooExpensive = 0;
 
-  dataflow::DataflowPruningManager DataflowPruning
-    (LHS, Inputs, DebugLevel);
+  PruningManager DataflowPruning(LHS, Inputs, DebugLevel, IC, Solver);
   // Cheaper tests go first
   std::vector<PruneFunc> PruneFuncs = {CostPrune};
   if (EnableDataflowPruning) {
+    DataflowPruning.init();
     PruneFuncs.push_back(DataflowPruning.getPruneFunc());
   }
   auto PruneCallback = MkPruneFunc(PruneFuncs);
@@ -660,7 +673,7 @@ void generateAndSortGuesses(InstContext &IC, Inst *LHS,
   getGuesses(Guesses, Inputs, LHS->Width,
              LHSCost, IC, nullptr, nullptr, TooExpensive, PruneCallback);
   if (DebugLevel >= 1) {
-    DataflowPruning.printStats(llvm::outs());
+    DataflowPruning.printStats(llvm::errs());
   }
 
   // add nops guesses separately
@@ -728,7 +741,7 @@ findSatisfyingConstantMap(SynthesisContext &SC, InstConstList &BadConsts,
 
       std::map<Inst *, llvm::APInt> VarMap;
       for (auto Var: Vars) {
-        APInt NextInput = getNextInputVal(Var, SC.BPCs, SC.PCs, TriedVars, SC.IC,
+        APInt NextInput = getNextInputVal(Var, SC.LHSUB, SC.BPCs, SC.PCs, TriedVars, SC.IC,
                                           SC.SMTSolver, SC.Timeout,
                                           HasNextInputValue);
         if (!HasNextInputValue)
@@ -820,11 +833,11 @@ ExhaustiveSynthesis::synthesize(SMTLIBSolver *SMTSolver,
                                 const std::vector<InstMapping> &PCs,
                                 Inst *LHS, Inst *&RHS,
                                 InstContext &IC, unsigned Timeout) {
-  SynthesisContext SC{IC, SMTSolver, LHS, PCs, BPCs, Timeout};
+  SynthesisContext SC{IC, SMTSolver, LHS, getUBInstCondition(SC.IC, SC.LHS), PCs, BPCs, Timeout};
 
   std::vector<Inst *> Guesses;
   std::error_code EC;
-  generateAndSortGuesses(IC, LHS, Guesses);
+  generateAndSortGuesses(IC, LHS, SMTSolver, Guesses);
 
   if (Guesses.empty()) {
     return EC;
@@ -895,8 +908,14 @@ ExhaustiveSynthesis::synthesize(SMTLIBSolver *SMTSolver,
         llvm::errs() << "second query is SAT-- constant doesn't work\n";
       Tries++;
       // TODO tune max tries
-      if (GuessHasConstant && Tries < MaxTries)
-        goto again;
+      if (GuessHasConstant) {
+        if (Tries < MaxTries) {
+          goto again;
+        } else {
+          if (DebugLevel > 3)
+            llvm::errs() << "number of constant synthesis tries exceeds MaxTries (default=30)\n";
+        }
+      }
     } else {
       if (DebugLevel > 2) {
         if (GuessHasConstant) {

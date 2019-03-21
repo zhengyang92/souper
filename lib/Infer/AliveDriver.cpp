@@ -1,5 +1,7 @@
+#include "souper/Extractor/ExprBuilder.h"
 #include "souper/Infer/AliveDriver.h"
 
+#include "alive2/ir/constant.h"
 #include "alive2/ir/function.h"
 #include "alive2/ir/instr.h"
 #include "alive2/ir/state.h"
@@ -21,11 +23,22 @@
 #include <z3.h>
 
 extern unsigned DebugLevel;
+static const int MaxTries = 30;
+
+bool startsWith(const std::string &pre, const std::string &str) {
+  return std::equal(pre.begin(), pre.end(), str.begin());
+}
 
 namespace {
 class FunctionBuilder {
 public:
   FunctionBuilder(IR::Function &F_) : F(F_) {}
+
+  template <typename A>
+  IR::Value *freeze(IR::Type &t, std::string name, A a) {
+    return append
+      (std::make_unique<IR::Freeze>(t, std::move(name), *toValue(t, a)));
+  }
 
   template <typename A, typename B, typename ...Others>
   IR::Value *binOp(IR::Type &t, std::string name, A a, B b,Others... others) {
@@ -111,6 +124,14 @@ private:
     if (auto It = identifiers.find(x); It != identifiers.end()) {
       return It->second;
     } else {
+      if (x.find("dummy") != std::string::npos) {
+        auto i = std::make_unique<IR::ConstantInput>(t, std::move(x));
+        auto ptr = i.get();
+//         F.addInput(std::move(i));
+        F.addConstant(std::move(i));
+        identifiers[x] = ptr;
+        return ptr;
+      }
       auto i = std::make_unique<IR::Input>(t, std::move(x));
       auto ptr = i.get();
       F.addInput(std::move(i));
@@ -129,9 +150,6 @@ private:
 };
 
 
-bool startsWith(const std::string &pre, const std::string &str) {
-  return std::equal(pre.begin(), pre.end(), str.begin());
-}
 
 void getReservedConsts(souper::Inst *I,
                        std::map<std::string, souper::Inst *> &Result,
@@ -154,6 +172,61 @@ struct ReturnLHSRAII {
     LHS = std::move(t.src);
   }
 };
+}
+
+std::map<souper::Inst *, llvm::APInt>
+performCegisFirstQuery(tools::Transform &t,
+                       std::map<std::string, souper::Inst *> &SouperConsts,
+                       smt::expr &TriedExpr) {
+  IR::Value::reset_gbl_id();
+  IR::State SrcState(t.src);
+  IR::State TgtState(t.tgt);
+  util::sym_exec(SrcState);
+  util::sym_exec(TgtState);
+
+  auto &Sv = SrcState.returnVal();
+  auto &Tv = TgtState.returnVal();
+
+  std::map<souper::Inst *, llvm::APInt> SynthesisResult;
+  SynthesisResult.clear();
+
+  std::set<smt::expr> Vars;
+  std::map<std::string, smt::expr> SMTConsts;
+  for (auto &[Var, Val] : TgtState.getValues()) {
+    auto &Name = Var->getName();
+    if (startsWith("%reservedconst", Name)) {
+      auto App = Val.first.value.isApp();
+      assert(App);
+      SMTConsts[Name] = (Z3_get_app_arg(smt::ctx(), App, 1));
+    }
+  }
+
+  // TODO: implement synthesis with refinement
+  smt::Solver::check({{(Sv.first.value == Tv.first.value) && (TriedExpr),
+          [&](const smt::Result &R) {
+
+          // no more guesses, stop immediately
+          if (R.isUnsat()) {
+            if (DebugLevel > 3)
+              llvm::errs()<<"No more new possible guesses\n";
+            return;
+          } else if (R.isSat()) {
+            auto &&Model = R.getModel();
+            smt::expr TriedAnte(false);
+
+            for (auto &[name, expr] : SMTConsts) {
+              TriedAnte |= (expr != smt::expr::mkUInt(Model.getInt(expr), expr.bits()));
+            }
+            TriedExpr &= TriedAnte;
+
+            for (auto &[name, expr] : SMTConsts) {
+              auto *I = SouperConsts[name];
+              SynthesisResult[I] = llvm::APInt(I->Width, Model.getInt(expr));
+            }
+          }
+        }}});
+
+  return SynthesisResult;
 }
 
 std::map<souper::Inst *, llvm::APInt>
@@ -223,8 +296,8 @@ synthesizeConstantUsingSolver(tools::Transform &t,
   return SynthesisResult;
 }
 
-souper::AliveDriver::AliveDriver(Inst *LHS_, Inst *PreCondition_)
-    : LHS(LHS_), PreCondition(PreCondition_) {
+souper::AliveDriver::AliveDriver(Inst *LHS_, Inst *PreCondition_, InstContext &IC_)
+    : LHS(LHS_), PreCondition(PreCondition_), IC(IC_) {
   InstNumbers = 101;
   //FIXME: Magic number. 101 is chosen arbitrarily.
   //This should go away once non-input variable names are not discarded
@@ -260,11 +333,74 @@ souper::AliveDriver::synthesizeConstants(souper::Inst *RHS) {
   return synthesizeConstantUsingSolver(t, Consts);
 }
 
+std::map<souper::Inst *, llvm::APInt>
+souper::AliveDriver::synthesizeConstantsWithCegis(souper::Inst *RHS, InstContext &IC) {
+  std::map<souper::Inst *, llvm::APInt> ConstMap;
 
-bool souper::AliveDriver::verify (Inst *RHS) {
+  std::map<std::string, Inst *> Consts;
+  std::set<Inst *> Visited;
+  getReservedConsts(RHS, Consts, Visited);
+  assert(!Consts.empty());
+
+  smt::expr TriedExpr(true);
+
   RExprCache.clear();
   IR::Function RHSF;
   if (!translateRoot(RHS, nullptr, RHSF, RExprCache)) {
+    if (DebugLevel > 2)
+      llvm::errs() << "Failed to translate RHS.\n";
+    // TODO: Eventually turn this into an assertion
+    return {};
+  }
+
+  tools::Transform t;
+  t.tgt = std::move(RHSF);
+
+  unsigned Tried = 0;
+  while (true) {
+    // First Query
+    {
+      ReturnLHSRAII foo{t, LHSF};
+      t.src = std::move(LHSF);
+
+      Tried ++;
+      // exceeds MAX_TRIES, stop immediately
+      if (Tried > MaxTries) {
+        if (DebugLevel > 2)
+          llvm::errs() << "Time of tries reached maximum\n";
+        return {};
+      }
+
+      ConstMap = performCegisFirstQuery(t, Consts, TriedExpr);
+
+      // stop immediately if first query is unsat.
+      if (ConstMap.empty())
+        return {};
+    }
+
+    // plug constants into guess
+    std::map<Inst *, Inst *> InstCache;
+    std::map<Block *, Block *> BlockCache;
+    auto GWithC = getInstCopy(RHS, IC, InstCache, BlockCache, &ConstMap,
+                              /*CloneVars=*/false);
+
+    // Second Query
+    {
+      if (verify(GWithC)) {
+        break;
+      } else {
+        continue;
+      }
+    }
+  }
+  return ConstMap;
+}
+
+
+bool souper::AliveDriver::verify (Inst *RHS, Inst *RHSAssumptions) {
+  RExprCache.clear();
+  IR::Function RHSF;
+  if (!translateRoot(RHS, RHSAssumptions, RHSF, RExprCache)) {
     llvm::errs() << "Failed to translate RHS.\n";
     // TODO: Eventually turn this into an assertion
     return false;
@@ -312,6 +448,33 @@ bool souper::AliveDriver::translateRoot(const souper::Inst *I, const Inst *PC,
   return true;
 }
 
+// Dummy because it doesn't actually build expressions.
+// It exists for the purpose of reusing parts of the abstract ExprBuilder here.
+// FIXME: Allow creating objects of ExprBuilder
+class DummyExprBuilder : public souper::ExprBuilder {
+public:
+  DummyExprBuilder(souper::InstContext &IC) : souper::ExprBuilder(IC) {}
+  std::string BuildQuery(const souper::BlockPCs & BPCs,
+                         const std::vector<souper::InstMapping> & PCs,
+                         souper::InstMapping Mapping,
+                         std::vector<souper::Inst *> * ModelVars,
+                         bool Negate) override {
+    llvm::report_fatal_error("Do not call");
+    return "";
+  }
+  std::string GetExprStr(const souper::BlockPCs & BPCs,
+                         const std::vector<souper::InstMapping> & PCs,
+                         souper::InstMapping Mapping,
+                         std::vector<souper::Inst *> * ModelVars,
+                         bool Negate) override {
+    llvm::report_fatal_error("Do not call");
+    return "";
+  }
+};
+std::string getUniqueName() {
+  static int N = 0;
+  return "dummy_" + std::to_string(N++);
+}
 
 bool souper::AliveDriver::translateAndCache(const souper::Inst *I,
                                             IR::Function &F,
@@ -350,6 +513,11 @@ bool souper::AliveDriver::translateAndCache(const souper::Inst *I,
   switch (I->K) {
     case souper::Inst::Var: {
       ExprCache[I] = Builder.var(t, Name);
+      return translateDataflowFacts(I, F, ExprCache);
+    }
+    case souper::Inst::ReservedInst: {
+//       ExprCache[I] = Builder.freeze(t, getUniqueName(),Builder.var(t, getUniqueName()));
+      ExprCache[I] = Builder.var(t, getUniqueName());
       return true;
     }
     case souper::Inst::Const: {
@@ -440,11 +608,30 @@ bool souper::AliveDriver::translateAndCache(const souper::Inst *I,
 
     UNARYOP(CtPop, Ctpop);
     UNARYOP(BSwap, BSwap);
+    UNARYOP(BitReverse, BitReverse);
 
     default:{
       llvm::outs() << "Unsupported Instruction Kind : " << I->getKindName(I->K) << "\n";
       return false;
     }
+  }
+}
+bool
+souper::AliveDriver::translateDataflowFacts(const souper::Inst* I,
+                                            IR::Function& F,
+                                            souper::AliveDriver::Cache& ExprCache) {
+  DummyExprBuilder EB(IC);
+  auto DataFlowConstraints = EB.getDataflowConditions(const_cast<Inst *>(I));
+  //FIXME: Get rid of the const_cast by making getDataflowConditions take const Inst *
+  if (DataFlowConstraints) {
+    if (!translateAndCache(DataFlowConstraints, F, ExprCache)) {
+      return false;
+    }
+    FunctionBuilder Builder(F);
+    Builder.assume(ExprCache[DataFlowConstraints]);
+    return true;
+  } else {
+    return false;
   }
 }
 
@@ -463,6 +650,30 @@ bool souper::isTransformationValid(souper::Inst* LHS, souper::Inst* RHS,
     Inst *Eq = IC.getInst(Inst::Eq, 1, {PC.LHS, PC.RHS});
     Ante = IC.getInst(Inst::And, 1, {Ante, Eq});
   }
-  AliveDriver Verifier(LHS, Ante);
+  AliveDriver Verifier(LHS, Ante, IC);
   return Verifier.verify(RHS);
+}
+
+
+bool souper::isCandidateInfeasible(souper::Inst* RHS, souper::ValueCache& C,
+                                   llvm::APInt LHSValue, InstContext &IC) {
+
+  auto LHS = IC.getConst(LHSValue);
+  // TODO: Use PC
+  AliveDriver Pruner(LHS, nullptr, IC);
+
+  Inst *RHSAssume = IC.getConst(llvm::APInt(1, true));
+  for (auto P : C) {
+    if (P.second.hasValue()) {
+      auto *Eq = IC.getInst(Inst::Eq, P.first->Width,
+                            {P.first, IC.getConst(P.second.getValue())});
+      RHSAssume = IC.getInst(Inst::And, 1, {RHSAssume, Eq});
+      ReplacementContext RC;
+      RC.printInst(RHSAssume, llvm::errs(), true);
+    } else {
+      return false;
+    }
+  }
+
+  return !Pruner.verify(RHS, RHSAssume);
 }
