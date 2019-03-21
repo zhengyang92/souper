@@ -634,9 +634,17 @@ def printFuncHeader():
             masks = "  " + old + " = shl " + w + " " + "1" + ", " + name + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_powerOfTwo\n" + masks
         if reg in signBits:
+            dfa = 1
             regnum = reg[1:]
             w = widths[reg]
-            old = regtmps[reg]
+            #old = regtmps[reg]
+            org = regtmps[reg]
+            if regtmps[reg] == reg:
+                old = "%tmp_" + str(cnt)
+                addreg = old
+            else:
+                old = regtmps[reg]
+            cnt += 1
             name = "%t6_" + regnum
             regtmps[reg] = name
             global truncCount
@@ -665,9 +673,17 @@ def printFuncHeader():
             functionDeclStr += "declare void @fun_" + str(functionDeclCount) + "(" + w + "* " + ptr + ")\n"
             functionDeclCount += 1
         if reg in nonZero:
+            dfa = 1
             regnum = reg[1:]
             w = widths[reg]
-            old = regtmps[reg]
+            #old = regtmps[reg]
+            org = regtmps[reg]
+            if regtmps[reg] == reg:
+                old = "%tmp_" + str(cnt)
+                addreg = old
+            else:
+                old = regtmps[reg]
+            cnt += 1
             name = "%t7_" + regnum
             regtmps[reg] = name
             ptr = "%ptr_" + str(MDRangePtr)
