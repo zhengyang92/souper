@@ -74,7 +74,7 @@ sub souper_known ($) {
     my $k = "";
     while (my $line = <INF>) {
 	chomp $line;
-	if ($line =~ /demanded-bits from souper: (.*)$/) {
+	if ($line =~ /demanded-bits from souper (.*)$/) {
 	    $k = $1;
 	}
     }
@@ -214,7 +214,7 @@ sub llvm_known($) {
     my $known;
     while (my $line = <INF>) {
 	chomp $line;
-	if ($line =~ /demanded-bits from compiler: (.*)$/) {
+	if ($line =~ /demanded-bits from compiler (.*)$/) {
 	    $known = $1;
 	}
     }
