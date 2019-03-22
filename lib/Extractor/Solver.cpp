@@ -77,7 +77,7 @@ public:
 
   void findVarsAndWidth(Inst *node, std::map<std::string, unsigned> &var_vect) {
     if (node->K == Inst::Var) {
-      std::string name = "%" + node->Name;
+      std::string name = node->Name;
       var_vect[name] = node->Width;
     }
     for (auto const &Op : node->Ops) {
@@ -85,20 +85,21 @@ public:
     }
   }
 
-  Inst * set_traverse(Inst *node, unsigned bitPos, InstContext &IC, bool &found) {
+  Inst * set_traverse(Inst *node, unsigned bitPos, InstContext &IC, std::string var_name) {
     std::vector<Inst *> Ops;
     for (auto const &Op : node->Ops) {
-      Ops.push_back(set_traverse(Op, bitPos, IC, found));
+      Ops.push_back(set_traverse(Op, bitPos, IC, var_name));
     }
 
     Inst *Copy = nullptr;
-    if (node->K == Inst::Var) {
-      found = true;
+    if ((node->K == Inst::Var) && (node->Name == var_name)) {
       unsigned VarWidth = node->Width;
       APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
       Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
 
       Copy = SetMask;
+    } else if (node->K == Inst::Var && node->Name != var_name) {
+      return node;
     } else if (node->K == Inst::Const || node->K == Inst::UntypedConst) {
       return node;
     } else if (node->K == Inst::Phi) {
@@ -112,20 +113,21 @@ public:
     return Copy;
   }
 
-  Inst * clear_traverse(Inst *node, unsigned bitPos, InstContext &IC, bool &found) {
+  Inst * clear_traverse(Inst *node, unsigned bitPos, InstContext &IC, std::string var_name) {
     std::vector<Inst *> Ops;
     for (auto const &Op : node->Ops) {
-      Ops.push_back(clear_traverse(Op, bitPos, IC, found));
+      Ops.push_back(clear_traverse(Op, bitPos, IC, var_name));
     }
 
     Inst *Copy = nullptr;
-    if (node->K == Inst::Var) {
-      found = true;
+    if (node->K == Inst::Var && node->Name == var_name) {
       unsigned VarWidth = node->Width;
       APInt ClearBit = getClearedBit(bitPos, VarWidth); //1110
       Inst *SetMask = IC.getInst(Inst::And, VarWidth, {node, IC.getConst(ClearBit)}); //xxxx && 1110
 
       Copy = SetMask;
+    } else if (node->K == Inst::Var && node->Name != var_name) {
+      return node;
     } else if (node->K == Inst::Const || node->K == Inst::UntypedConst) {
       return node;
     } else if (node->K == Inst::Phi) {
@@ -198,16 +200,14 @@ public:
     // for each var
     for (std::map<std::string,unsigned>::iterator it = vars_vect.begin();
          it != vars_vect.end(); ++it) {
-
       // intialize ResultDB
        std::string var_name = it->first;
        unsigned var_width = vars_vect[var_name];
        APInt ResultDB = APInt::getNullValue(var_width);
 
       // for each bit of var
-      for (unsigned I=0; I < var_width; I++) {
-        bool sfound = false;
-        Inst *SetLHS = set_traverse(LHS, I, IC, sfound);
+      for (unsigned bit=0; bit<var_width; bit++) {
+        Inst *SetLHS = set_traverse(LHS, bit, IC, var_name);
 /*
         llvm::errs()<<"R1-----\n";
         ReplacementContext RC1;
@@ -216,9 +216,7 @@ public:
         RC2.printInst(LHS, llvm::errs(), true);
         llvm::errs()<<"R1-----\n";
 */
-
-        bool cfound = false;
-        Inst *ClearLHS = clear_traverse(LHS, I, IC, cfound);
+        Inst *ClearLHS = clear_traverse(LHS, bit, IC, var_name);
 /*
         llvm::errs()<<"R2-----\n";
         ReplacementContext RC3;
@@ -227,13 +225,12 @@ public:
         RC4.printInst(LHS, llvm::errs(), true);
         llvm::errs()<<"R2-----\n";
 */
-
         if (testDB(BPCs, PCs, LHS, SetLHS, IC) && testDB(BPCs, PCs, LHS, ClearLHS, IC)) {
           // not-demanded
           ResultDB = ResultDB;
         } else {
           // demanded
-          ResultDB |= APInt::getOneBitSet(var_width, I);
+          ResultDB |= APInt::getOneBitSet(var_width, bit);
         }
       }
       ResDB_vect[var_name] = ResultDB;

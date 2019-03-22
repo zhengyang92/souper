@@ -92,7 +92,7 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
         std::string var_name = it->first;
         llvm::APInt DB_for_var = DB_vect[var_name];
         std::string s = Inst::getDemandedBitsString(DB_for_var);
-        llvm::outs() << "demanded-bits from souper for " << var_name << " : "<< s << "\n";
+        llvm::outs() << "demanded-bits from souper for %" << var_name << " : "<< s << "\n";
       }
       return 0;
     }
