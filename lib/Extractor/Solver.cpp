@@ -233,6 +233,19 @@ public:
           ResultDB |= APInt::getOneBitSet(var_width, bit);
         }
       }
+
+      // verify if LHS has non-AllOnes demanded bits,
+      // and, ResultDB for a variable has 1 in any bit-position for
+      // which LHS->DB has 0 in it, conclude the bit to be non-demanded.
+      if (!LHS->DemandedBits.isAllOnesValue()) {
+        for (unsigned J=0; J<var_width; ++J) {
+          if (ResultDB[J] == 1 && LHS->DemandedBits[J] == 0) {
+            APInt ClearBit = getClearedBit(J, var_width);
+            ResultDB &= ClearBit;
+          }
+        }
+      }
+
       ResDB_vect[var_name] = ResultDB;
     }
     return std::error_code();
