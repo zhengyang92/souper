@@ -849,11 +849,12 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
         if (auto BO = dyn_cast<BinaryOperator>(&I)) {
           auto AddOp = BO->getOpcode();
           if (AddOp == Instruction::Add) {
-            Inst *ConstZero = EB.get(BO->getOperand(1));
-            if (!ConstZero->Val.getBoolValue()) {
-              APInt DemandedBitsVal = DB->getDemandedBits(&I);
-              llvm::outs() << "demanded-bits from compiler for " << I.getName() << " : "
-                           << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
+            if (auto ConstZeroOp = dyn_cast<ConstantInt>(BO->getOperand(1))) {
+              if (ConstZeroOp->isZero()) {
+                APInt DemandedBitsVal = DB->getDemandedBits(&I);
+                llvm::outs() << "demanded-bits from compiler for " << I.getName() << " : "
+                             << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
+              }
             }
           }
         }
