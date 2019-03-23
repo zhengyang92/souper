@@ -66,8 +66,8 @@ sub souper_known ($) {
     (my $fh, my $tmpfn) = File::Temp::tempfile();
     print $fh $opt;
     $fh->flush();
-    #my $arg = "-infer-sign-bits -souper-exploit-ub=false -infer-rhs -solver-timeout=30";    
-    my $arg = "-infer-sign-bits -infer-rhs -solver-timeout=30";    
+    #my $arg = "-infer-sign-bits -souper-exploit-ub=false -infer-rhs -solver-timeout=30";
+    my $arg = "-infer-sign-bits -infer-rhs -solver-timeout=30";
     my $cmd = "${check} $solver $arg < $tmpfn 2>/dev/null |";
     # print "<${cmd}>\n";
     open INF, $cmd;
@@ -255,13 +255,13 @@ sub go($) {
 	my $llvm_stronger = 0;
 	my $souper_stronger = 0;
         #FIXME for signbits
-        if ($sk gt $lk) {
+        if ($sk > $lk) {
             $souper_stronger = 1;
         }
-        if ($lk gt $sk) {
+        if ($lk > $sk) {
             $llvm_stronger = 1;
         }
-        if ($sk eq $lk) {
+        if ($sk == $lk) {
             $souper_stronger = 1;
             $llvm_stronger = 1;
         }
