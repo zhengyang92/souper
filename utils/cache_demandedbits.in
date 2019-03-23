@@ -74,7 +74,7 @@ sub souper_known ($) {
     my $k = "";
     while (my $line = <INF>) {
 	chomp $line;
-	if ($line =~ /known from souper: (.*)$/) {
+	if ($line =~ /demanded-bits from souper (.*)$/) {
 	    $k = $1;
 	}
     }
@@ -210,11 +210,11 @@ sub llvm_known($) {
     (my $fh1, my $fn1) = File::Temp::tempfile();
     print $fh1 $opt;
     close $fh1;
-    open INF, "$triager < $fn1 | $llvmas | $souper -print-demanded-bits-at-return |" or die;
+    open INF, "$triager < $fn1 | $llvmas | $souper -print-demanded-bits-from-harvester |" or die;
     my $known;
     while (my $line = <INF>) {
 	chomp $line;
-	if ($line =~ /known at return: (.*)$/) {
+	if ($line =~ /demanded-bits from compiler (.*)$/) {
 	    $known = $1;
 	}
     }
@@ -236,7 +236,7 @@ sub go($) {
     $ret .= "\n";
 
     my $sk = souper_known($opt);
-    $ret .= "known from Souper:   $sk\n";
+    $ret .= "demanded-bits from Souper:   $sk\n";
 
     my $lk;
     if (0) {
@@ -250,31 +250,31 @@ sub go($) {
     } else {
 	$lk = llvm_known($opt);
     }
-    $ret .= "known from compiler: $lk\n";
+    $ret .= "demanded-bits from compiler: $lk\n";
 
     my $print = 0;
     if ($sk ne $lk) {
 	$print = 1;
 	die unless length($lk) == length($sk);
-	my $llvm_stronger = 0;
-	my $souper_stronger = 0;
-	for (my $i=0; $i<length($lk); $i++) {
-	    if ((substr($sk,$i,1) eq "1") && (substr($lk,$i,1) eq "0")) {
-		$llvm_stronger = 1;
-	    }
-	    if ((substr($lk,$i,1) eq "1") && (substr($sk,$i,1) eq "0")) {
-		$souper_stronger = 1;
-	    }
-	}
-	if ($llvm_stronger && $souper_stronger) {
-	    $ret .= "neither is stronger";
-	} elsif ($llvm_stronger) {
-	    $ret .= "llvm is stronger";
-	} elsif ($souper_stronger) {
-	    $ret .= "souper is stronger";
-	} else {
-	    die;
-	}
+#	my $llvm_stronger = 0;
+#	my $souper_stronger = 0;
+#	for (my $i=0; $i<length($lk); $i++) {
+#	    if ((substr($sk,$i,1) eq "1") && (substr($lk,$i,1) eq "0")) {
+#		$llvm_stronger = 1;
+#	    }
+#	    if ((substr($lk,$i,1) eq "1") && (substr($sk,$i,1) eq "0")) {
+#		$souper_stronger = 1;
+#	    }
+#	}
+#	if ($llvm_stronger && $souper_stronger) {
+#	    $ret .= "neither is stronger";
+#	} elsif ($llvm_stronger) {
+#	    $ret .= "llvm is stronger";
+#	} elsif ($souper_stronger) {
+#	    $ret .= "souper is stronger";
+#	} else {
+#	    die;
+#	}
 	$ret .= "\n";
     }
     $ret .= "\n";

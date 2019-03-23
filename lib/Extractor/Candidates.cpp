@@ -84,7 +84,7 @@ static llvm::cl::opt<bool> PrintRangeAtReturn(
     llvm::cl::desc("Print range inforation in each value returned from a function (default=false)"),
     llvm::cl::init(false));
 static llvm::cl::opt<bool> PrintDemandedBitsAtReturn(
-    "print-demanded-bits-at-return",
+    "print-demanded-bits-from-harvester",
     llvm::cl::desc("Print demanded bits (default=false)"),
     llvm::cl::init(false));
 static llvm::cl::opt<bool> HarvestUses(
@@ -950,15 +950,18 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
                      << Range.getUpper() << ")" << "\n";
       }
       if (PrintDemandedBitsAtReturn && I.getType()->isIntegerTy()) {
-//        auto V = I.getOperand(0);
-//        auto DL = F.getParent()->getDataLayout();
-//        unsigned Width = DL.getTypeSizeInBits(V->getType());
-//        APInt DemandedBitsVal = APInt::getAllOnesValue(Width);
-//        if (Instruction *IDB = dyn_cast<Instruction>(V))
-//          DemandedBitsVal = DB->getDemandedBits(IDB);
-//        llvm::outs() << "known at return: " << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
-        APInt DemandedBitsVal = DB->getDemandedBits(&I);
-        llvm::outs() << "known at return: " << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
+        if (auto BO = dyn_cast<BinaryOperator>(&I)) {
+          auto AddOp = BO->getOpcode();
+          if (AddOp == Instruction::Add) {
+            if (auto ConstZeroOp = dyn_cast<ConstantInt>(BO->getOperand(1))) {
+              if (ConstZeroOp->isZero()) {
+                APInt DemandedBitsVal = DB->getDemandedBits(&I);
+                llvm::outs() << "demanded-bits from compiler for " << I.getName() << " : "
+                             << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
+              }
+            }
+          }
+        }
       }
 
       // Harvest Uses (Operands)

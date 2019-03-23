@@ -75,6 +75,176 @@ public:
   BaseSolver(std::unique_ptr<SMTLIBSolver> SMTSolver, unsigned Timeout)
       : SMTSolver(std::move(SMTSolver)), Timeout(Timeout) {}
 
+  void findVarsAndWidth(Inst *node, std::map<std::string, unsigned> &var_vect) {
+    if (node->K == Inst::Var) {
+      std::string name = node->Name;
+      var_vect[name] = node->Width;
+    }
+    for (auto const &Op : node->Ops) {
+      findVarsAndWidth(Op, var_vect);
+    }
+  }
+
+  Inst * set_traverse(Inst *node, unsigned bitPos, InstContext &IC, std::string var_name) {
+    std::vector<Inst *> Ops;
+    for (auto const &Op : node->Ops) {
+      Ops.push_back(set_traverse(Op, bitPos, IC, var_name));
+    }
+
+    Inst *Copy = nullptr;
+    if ((node->K == Inst::Var) && (node->Name == var_name)) {
+      unsigned VarWidth = node->Width;
+      APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
+      Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
+
+      Copy = SetMask;
+    } else if (node->K == Inst::Var && node->Name != var_name) {
+      return node;
+    } else if (node->K == Inst::Const || node->K == Inst::UntypedConst) {
+      return node;
+    } else if (node->K == Inst::Phi) {
+      auto BlockCopy = IC.createBlock(node->B->Preds);
+      Copy = IC.getPhi(BlockCopy, Ops);
+    } else {
+      Copy = IC.getInst(node->K, node->Width, Ops);
+    }
+    assert(Copy);
+
+    return Copy;
+  }
+
+  Inst * clear_traverse(Inst *node, unsigned bitPos, InstContext &IC, std::string var_name) {
+    std::vector<Inst *> Ops;
+    for (auto const &Op : node->Ops) {
+      Ops.push_back(clear_traverse(Op, bitPos, IC, var_name));
+    }
+
+    Inst *Copy = nullptr;
+    if (node->K == Inst::Var && node->Name == var_name) {
+      unsigned VarWidth = node->Width;
+      APInt ClearBit = getClearedBit(bitPos, VarWidth); //1110
+      Inst *SetMask = IC.getInst(Inst::And, VarWidth, {node, IC.getConst(ClearBit)}); //xxxx && 1110
+
+      Copy = SetMask;
+    } else if (node->K == Inst::Var && node->Name != var_name) {
+      return node;
+    } else if (node->K == Inst::Const || node->K == Inst::UntypedConst) {
+      return node;
+    } else if (node->K == Inst::Phi) {
+      auto BlockCopy = IC.createBlock(node->B->Preds);
+      Copy = IC.getPhi(BlockCopy, Ops);
+    } else {
+      Copy = IC.getInst(node->K, node->Width, Ops);
+    }
+    assert(Copy);
+
+    return Copy;
+  }
+
+  void plain_traverse(Inst *LHS) {
+    if (!LHS) return;
+    llvm::outs() << "Kind = " << Inst::getKindName(LHS->K) << ", Value = " << LHS->Val <<"\n";
+    for (unsigned Op = 0; Op < LHS->Ops.size(); ++Op) {
+      plain_traverse(LHS->Ops[Op]);
+    }
+  }
+
+  // modified testDB w.r.t. InferNop bigquery logic
+  bool testDB(const BlockPCs &BPCs,
+              const std::vector<InstMapping> &PCs,
+              Inst *LHS, Inst *NewLHS,
+              InstContext &IC) {
+    unsigned W = LHS->Width;
+    Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, NewLHS});
+    Inst *Ante = IC.getConst(APInt(1, 1));
+    Ante = IC.getInst(Inst::And, 1, {Ante, Ne});
+    APInt TrueGuess(1, 1, false);
+    Inst *True = IC.getConst(TrueGuess);
+    InstMapping Mapping(Ante, True);
+/*
+    llvm::outs() << "- - - -- - - - Original Tree is - - - - - - \n";
+    plain_traverse(LHS);
+    llvm::outs() << "- - - -- - - - New Tree is - - - - - - \n";
+    plain_traverse(NewLHS);
+*/
+
+    //InstMapping Mapping(LHS, NewLHS);
+    bool IsSat;
+    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0, true);
+    //llvm::outs() << "==== Query ==== \n" << Query << "\n";
+    std::error_code EC = SMTSolver->isSatisfiable(Query,
+                                                  IsSat, 0, 0, Timeout);
+    if (EC)
+      llvm::report_fatal_error("stopping due to error");
+    //llvm::outs() << "Result of testDB IsSat = " << IsSat << "\n";
+    return !IsSat;
+  }
+
+  std::error_code testDemandedBits(const BlockPCs &BPCs,
+                              const std::vector<InstMapping> &PCs,
+                              Inst *LHS, std::map<std::string, APInt> &ResDB_vect,
+                              InstContext &IC) override {
+    unsigned W = LHS->Width;
+    std::map<Inst *, Inst *> InstCache;
+    std::map<Block *, Block *> BlockCache;
+
+    std::map<std::string, unsigned> vars_vect;
+    findVarsAndWidth(LHS, vars_vect);
+
+    // for each var
+    for (std::map<std::string,unsigned>::iterator it = vars_vect.begin();
+         it != vars_vect.end(); ++it) {
+      // intialize ResultDB
+       std::string var_name = it->first;
+       unsigned var_width = vars_vect[var_name];
+       APInt ResultDB = APInt::getNullValue(var_width);
+
+      // for each bit of var
+      for (unsigned bit=0; bit<var_width; bit++) {
+        Inst *SetLHS = set_traverse(LHS, bit, IC, var_name);
+/*
+        llvm::errs()<<"R1-----\n";
+        ReplacementContext RC1;
+        RC1.printInst(SetLHS, llvm::errs(), true);
+        ReplacementContext RC2;
+        RC2.printInst(LHS, llvm::errs(), true);
+        llvm::errs()<<"R1-----\n";
+*/
+        Inst *ClearLHS = clear_traverse(LHS, bit, IC, var_name);
+/*
+        llvm::errs()<<"R2-----\n";
+        ReplacementContext RC3;
+        RC3.printInst(ClearLHS, llvm::errs(), true);
+        ReplacementContext RC4;
+        RC4.printInst(LHS, llvm::errs(), true);
+        llvm::errs()<<"R2-----\n";
+*/
+        if (testDB(BPCs, PCs, LHS, SetLHS, IC) && testDB(BPCs, PCs, LHS, ClearLHS, IC)) {
+          // not-demanded
+          ResultDB = ResultDB;
+        } else {
+          // demanded
+          ResultDB |= APInt::getOneBitSet(var_width, bit);
+        }
+      }
+
+      // verify if LHS has non-AllOnes demanded bits,
+      // and, ResultDB for a variable has 1 in any bit-position for
+      // which LHS->DB has 0 in it, conclude the bit to be non-demanded.
+      if (!LHS->DemandedBits.isAllOnesValue()) {
+        for (unsigned J=0; J<var_width; ++J) {
+          if (ResultDB[J] == 1 && LHS->DemandedBits[J] == 0) {
+            APInt ClearBit = getClearedBit(J, var_width);
+            ResultDB &= ClearBit;
+          }
+        }
+      }
+
+      ResDB_vect[var_name] = ResultDB;
+    }
+    return std::error_code();
+  }
+
   bool testZeroSign(const BlockPCs &BPCs,
                 const std::vector<InstMapping> &PCs,
                 APInt &Negative, Inst *LHS,
@@ -277,180 +447,11 @@ public:
     return std::error_code();
   }
 
-  Inst * set_traverse(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx, bool &found) {
-    Inst *root = node;
-    llvm::outs() << "***** current = " << Inst::getKindName(node->K) << ", prev = " << Inst::getKindName(prev->K) << "\n";
-
-    if (node->K == Inst::Var) {
-      found = true;
-      llvm::outs() << "** found var in set_traversal **\n";
-      unsigned VarWidth = node->Width;
-      APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
-      Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
-
-      llvm::outs() << "- - - - - - plain traverse set mask only ---\n";
-      plain_traverse(SetMask);
-
-//      node = SetMask;
-//      prev->Ops[idx] = node;
-      prev->Ops[idx] = SetMask;
-
-      return OrigLHS;
-    }
-    for (unsigned Op=0; Op<node->Ops.size(); ++Op) {
-      set_traverse(node->Ops[Op], OrigLHS, node, bitPos, IC, Op, found);
-      if (found)
-        break;
-    }
-
-    return OrigLHS;
-  }
-
-  void plain_traverse(Inst *LHS) {
-    if (!LHS) return;
-    llvm::outs() << "Kind = " << Inst::getKindName(LHS->K) << ", Value = " << LHS->Val <<"\n";
-    //for (auto Op: LHS->Ops) {
-      //plain_traverse(Op);
-    for (unsigned Op = 0; Op < LHS->Ops.size(); ++Op) {
-      plain_traverse(LHS->Ops[Op]);
-    }
-  }
-
-  Inst * clear_traverse(Inst *node, Inst *OrigLHS, Inst *prev, unsigned bitPos, InstContext &IC, unsigned idx, bool &found) {
-    Inst *root = node;
-    if (node->K == Inst::Var) {
-      unsigned VarWidth = node->Width;
-
-      APInt AllOnes = APInt::getAllOnesValue(VarWidth); //1111
-      APInt ClearBit = getClearedBit(bitPos, VarWidth); //1110
-
-      Inst *ClearMask = IC.getInst(Inst::And, VarWidth, {node, IC.getConst(ClearBit)}); // xxxx && ~(0001)
-
-      llvm::outs() << "~~~~~~~ plain traverse just clear mask: \n";
-      plain_traverse(ClearMask);
-
-//      node = ClearMask;
-//      prev->Ops[idx] = node;
-      prev->Ops[idx] = ClearMask;
-
-      return OrigLHS;
-    }
-    for (unsigned Op=0; Op<node->Ops.size(); ++Op) {
-      clear_traverse(node->Ops[Op], OrigLHS, node, bitPos, IC, Op, found);
-      if (found) break;
-    }
-
-    return OrigLHS;
-  }
-
-  // modified testDB w.r.t. InferNop bigquery logic
-  bool testDB(const BlockPCs &BPCs,
-              const std::vector<InstMapping> &PCs,
-              Inst *LHS, Inst *NewLHS,
-              InstContext &IC) {
-    unsigned W = LHS->Width;
-    Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, NewLHS});
-    Inst *Ante = IC.getConst(APInt(1, 1));
-    Ante = IC.getInst(Inst::And, 1, {Ante, Ne});
-    APInt TrueGuess(1, 1, false);
-    Inst *True = IC.getConst(TrueGuess);
-    InstMapping Mapping(Ante, True);
-
-    llvm::outs() << "- - - -- - - - Original Tree is - - - - - - \n";
-    plain_traverse(LHS);
-    llvm::outs() << "- - - -- - - - New Tree is - - - - - - \n";
-    plain_traverse(NewLHS);
-
-
-    //InstMapping Mapping(LHS, NewLHS);
-    bool IsSat;
-//    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0);
-    std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0, true);
-    llvm::outs() << "==== Query ==== \n" << Query << "\n";
-    std::error_code EC = SMTSolver->isSatisfiable(Query,
-                                                  IsSat, 0, 0, Timeout);
-    if (EC)
-      llvm::report_fatal_error("stopping due to error");
-    llvm::outs() << "Result of testDB IsSat = " << IsSat << "\n";
-    return !IsSat;
-  }
-
   llvm::APInt getClearedBit(unsigned Pos, unsigned W) {
     APInt AllOnes = APInt::getAllOnesValue(W);
     AllOnes.clearBit(Pos);
     return AllOnes;
   }
-
-  // working version with manual LHS and loop to set constants to set the bits in var
-  std::error_code testDemandedBits(const BlockPCs &BPCs,
-                              const std::vector<InstMapping> &PCs,
-                              Inst *LHS, APInt &ResultDB,
-                              InstContext &IC) override {
-    unsigned W = LHS->Width;
-    ResultDB = APInt::getNullValue(W);
-
-    // manually construct LHS = yy * 4
-    Inst *V = IC.createVar(W, "yy");
-    LHS = IC.getInst(Inst::Shl, W, {V, IC.getConst(APInt(W, 1))});
-
-    // loop for each bit to create a constant for setting and clearing bit in Var
-    for (unsigned I=0; I<W; ++I) {
-      APInt SetBit = APInt::getOneBitSet(W, I);
-      Inst *VarOrConst = IC.getInst(Inst::Or, W, {V, IC.getConst(SetBit)});
-      Inst *NewLHS = IC.getInst(Inst::Shl, W, {VarOrConst, IC.getConst(APInt(W, 1))});
-
-      std::map<Inst *, Inst *> InstCache;
-      std::map<Block *, Block *> BlockCache;
-
-      // comparing original LHS to copy of LHS does not work
-      //Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, getInstCopy(LHS, IC, InstCache, BlockCache, 0, true)});
-
-      // copy to copy comparison works
-      //Inst *Ne = IC.getInst(Inst::Ne, 1, {getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
-      //                                    getInstCopy(LHS, IC, InstCache, BlockCache, 0, true)});
-
-      //Inst *Ne = IC.getInst(Inst::Ne, 1, {getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
-      //                                    getInstCopy(NewLHS, IC, InstCache, BlockCache, 0, true)});
-
-      Inst *Ne = IC.getInst(Inst::Ne, 1, {LHS, NewLHS});
-
-      // using getInstCopy() with set_traverse() does not work
-      //bool sfound = false;
-      //Inst *Ne = IC.getInst(Inst::Ne, 1, {getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
-      //                                    set_traverse(getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
-      //                                                 getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
-      //                                                 getInstCopy(LHS, IC, InstCache, BlockCache, 0, true),
-      //                                                 I, IC, 0, sfound)});
-
-      Inst *Ante = IC.getConst(APInt(1, true));
-      Ante = IC.getInst(Inst::And, 1, {Ante, Ne});
-
-      InstMapping Mapping(Ante, IC.getConst(APInt(1, true)));
-
-      std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0, /*Negate=*/true);
-
-      if (Query.empty())
-        return std::make_error_code(std::errc::value_too_large);
-      bool IsSat;
-      std::error_code EC = SMTSolver->isSatisfiable(Query, IsSat, 0, 0, Timeout);
-      if (EC)
-        llvm::report_fatal_error("stopping due to error");
-
-      llvm::outs() << "Query =======\n" << Query << "\n";
-      llvm::outs() << "IsSat ====  " << IsSat << "\n";
-
-      if (!IsSat) {
-        // not demanded
-        llvm::outs() << "Bit " << I << " : not-demanded\n";
-      } else {
-        // demanded
-        llvm::outs() << "Bit " << I << " : demanded\n";
-      }
-    }
-
-    return std::error_code();
-  }
-
 
   // this version has all copies passed -- this is wrong creates big trees all the time for original LHS too
 ///  std::error_code testDemandedBits(const BlockPCs &BPCs,
@@ -2065,9 +2066,9 @@ public:
 
   std::error_code testDemandedBits(const BlockPCs &BPCs,
                             const std::vector<InstMapping> &PCs,
-                            Inst *LHS, APInt &DB,
+                            Inst *LHS, std::map<std::string,APInt> &DB_vect,
                             InstContext &IC) override {
-    return UnderlyingSolver->testDemandedBits(BPCs, PCs, LHS, DB, IC);
+    return UnderlyingSolver->testDemandedBits(BPCs, PCs, LHS, DB_vect, IC);
   }
 
 };
@@ -2190,9 +2191,9 @@ public:
 
   std::error_code testDemandedBits(const BlockPCs &BPCs,
                             const std::vector<InstMapping> &PCs,
-                            Inst *LHS, APInt &DB,
+                            Inst *LHS, std::map<std::string, APInt> &DB_vect,
                             InstContext &IC) override {
-    return UnderlyingSolver->testDemandedBits(BPCs, PCs, LHS, DB, IC);
+    return UnderlyingSolver->testDemandedBits(BPCs, PCs, LHS, DB_vect, IC);
   }
 
 };
