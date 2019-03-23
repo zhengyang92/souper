@@ -87,6 +87,12 @@ static llvm::cl::opt<bool> PrintDemandedBitsAtReturn(
     "print-demanded-bits-at-return",
     llvm::cl::desc("Print demanded bits (default=false)"),
     llvm::cl::init(false));
+static llvm::cl::opt<bool> HarvestUses(
+    "souper-harvest-uses",
+    llvm::cl::desc("Harvest operands (default=false)"),
+    llvm::cl::init(false));
+
+extern bool UseAlive;
 
 using namespace llvm;
 using namespace souper;
@@ -149,6 +155,7 @@ struct ExprBuilder {
                          BasicBlock *BB);
   Inst *get(Value *V, APInt DemandedBits);
   Inst *get(Value *V);
+  Inst *getFromUse(Value *V);
   void markExternalUses(Inst *I);
 };
 
@@ -489,6 +496,9 @@ Inst *ExprBuilder::buildHelper(Value *V) {
     // TODO: In principle we could track loop iterations and maybe even maintain
     // a separate set of values for each iteration (as in bounded model
     // checking).
+    if (UseAlive) { // FIXME: Remove this after alive supports phi
+      return makeArrayRead(V);
+    }
     if (!isLoopEntryPoint(Phi)) {
       BasicBlock *BB = Phi->getParent();
       BlockInfo &BI = EBC.BlockMap[BB];
@@ -537,6 +547,8 @@ Inst *ExprBuilder::buildHelper(Value *V) {
           return IC.getInst(Inst::CtPop, L->Width, {L});
         case Intrinsic::bswap:
           return IC.getInst(Inst::BSwap, L->Width, {L});
+        case Intrinsic::bitreverse:
+	  return IC.getInst(Inst::BitReverse, L->Width, {L});
         case Intrinsic::cttz:
           return IC.getInst(Inst::Cttz, L->Width, {L});
         case Intrinsic::ctlz:
@@ -612,6 +624,16 @@ Inst *ExprBuilder::get(Value *V, APInt DemandedBits) {
   Inst *&E = EBC.InstMap[V];
   if (!E)
     E = build(V, DemandedBits);
+  if (E->K != Inst::Const && !E->hasOrigin(V))
+    E->Origins.push_back(V);
+  return E;
+}
+
+Inst *ExprBuilder::getFromUse(Value *V) {
+  // Do not find from cache
+  unsigned Width = DL.getTypeSizeInBits(V->getType());
+  APInt DemandedBits = APInt::getAllOnesValue(Width);
+  Inst *E = build(V, DemandedBits);
   if (E->K != Inst::Const && !E->hasOrigin(V))
     E->Origins.push_back(V);
   return E;
@@ -940,6 +962,29 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
         llvm::outs() << "known at return: " << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
       }
 
+      // Harvest Uses (Operands)
+      if (HarvestUses) {
+        std::unordered_set<llvm::Instruction *> Visited;
+        for (auto &Op : I.operands()) {
+          // TODO: support regular values
+          if (auto U = dyn_cast<Instruction>(Op)){
+            // If uses are in the same block with its def, give up
+            if (U->getParent() == &BB)
+              continue;
+            if (U->getType()->isIntegerTy()) {
+              if(Visited.insert(U).second) {
+                Inst *In = EB.getFromUse(U);
+                In->HarvestKind = HarvestType::HarvestedFromUse;
+                In->HarvestFrom = &BB;
+                EB.markExternalUses(In);
+                BCS->Replacements.emplace_back(U, InstMapping(In, 0));
+                assert(EB.get(U)->hasOrigin(U));
+              }
+            }
+          }
+        }
+      }
+
       if (!I.getType()->isIntegerTy())
         continue;
       if (I.hasNUses(0))
@@ -951,6 +996,8 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
       } else {
         In = EB.get(&I);
       }
+      In->HarvestKind = HarvestType::HarvestedFromDef;
+      In->HarvestFrom = nullptr;
       EB.markExternalUses(In);
       BCS->Replacements.emplace_back(&I, InstMapping(In, 0));
       assert(EB.get(&I)->hasOrigin(&I));

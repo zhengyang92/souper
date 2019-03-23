@@ -122,7 +122,8 @@ FoundChar:
       const char *NameBegin = Begin;
       while (Begin != End && ((*Begin >= '0' && *Begin <= '9') ||
                               (*Begin >= 'A' && *Begin <= 'Z') ||
-                              (*Begin >= 'a' && *Begin <= 'z'))) {
+                              (*Begin >= 'a' && *Begin <= 'z') ||
+                              (*Begin == '_'))) {
         ++Begin;
       }
       if (Begin == NameBegin) {
@@ -358,7 +359,7 @@ struct Parser {
   ParsedReplacement parseReplacement(std::string &ErrStr);
   std::vector<ParsedReplacement> parseReplacements(std::string &ErrStr);
   void nextReplacement();
-  bool parseDemandedBits(std::string &ErrStr, Inst *LHS);
+  bool parseInstAttribute(std::string &ErrStr, Inst *LHS);
   bool isOverflow(Inst::Kind IK);
 };
 
@@ -581,6 +582,7 @@ bool Parser::typeCheckInst(Inst::Kind IK, unsigned &Width,
 
   case Inst::CtPop:
   case Inst::BSwap:
+  case Inst::BitReverse:
   case Inst::Cttz:
   case Inst::Ctlz:
     MaxOps = MinOps = 1;
@@ -723,25 +725,9 @@ bool Parser::typeCheckInst(Inst::Kind IK, unsigned &Width,
     return false;
   }
 
-  switch (IK) {
-  case Inst::BSwap:
-    if (Width != 16 && Width != 32 && Width != 64) {
-      ErrStr = "bswap doesn't support " + std::to_string(Width) + " bits";
-      return false;
-    }
-    break;
-  case Inst::CtPop:
-  case Inst::Ctlz:
-  case Inst::Cttz:
-    if (Width !=8 && Width != 16 && Width != 32 &&
-        Width != 64 && Width != 256) {
-      ErrStr = std::string(Inst::getKindName(IK)) + " doesn't support " +
-        std::to_string(Width) + " bits";
-      return false;
-    }
-    break;
-  default:
-    break;
+  if (IK == Inst::BSwap && Width % 16 != 0) {
+    ErrStr = "bswap argument must be a multiple of 16 bits";
+    return false;
   }
 
   return true;
@@ -779,59 +765,81 @@ InstMapping Parser::parseInstMapping(std::string &ErrStr) {
   return InstMapping(SrcRep[0], SrcRep[1]);
 }
 
-bool Parser::parseDemandedBits(std::string &ErrStr, Inst *LHS) {
-  if (CurTok.K == Token::OpenParen) {
+bool Parser::parseInstAttribute(std::string &ErrStr, Inst *LHS) {
+  int DemandedBitsCount = 0;
+  int HarvestKindCount = 0;
+  LHS->HarvestKind = HarvestType::HarvestedFromDef;
+  LHS->DemandedBits = APInt::getAllOnesValue(LHS->Width);
+  while (CurTok.K == Token::OpenParen) {
     llvm::APInt DemandedBitsVal = APInt(LHS->Width, 0, false);
     llvm::APInt ConstOne(LHS->Width, 1, false);
     if (!consumeToken(ErrStr))
       return false;
     if (CurTok.K != Token::Ident) {
-      ErrStr = makeErrStr("missing demandedBits string");
+      ErrStr = makeErrStr("missing Inst attribute string");
       return false;
     }
-    if (CurTok.str() != "demandedBits") {
-      ErrStr = makeErrStr("invalid demandedBits data flow fact");
-      return false;
-    }
-    if (!consumeToken(ErrStr))
-      return false;
-    if (CurTok.K != Token::Eq) {
-      ErrStr = makeErrStr("expected '=' for demandedBits");
-      return false;
-    }
-    if (!consumeToken(ErrStr))
-      return false;
-    if (CurTok.K != Token::UntypedInt) {
-      ErrStr = makeErrStr("expected demandedBits pattern of type [0|1]+");
-      return false;
-    }
-    if (LHS->Width != CurTok.Len) {
-      ErrStr = makeErrStr("demandedBits pattern must be of same length as infer operand width");
-      return false;
-    }
-    std::string DemandedBitsPattern = CurTok.str();
-    for (unsigned i = 0; i < LHS->Width; ++i) {
-      if (DemandedBitsPattern[i] == '1') {
-        DemandedBitsVal += ConstOne.shl(DemandedBitsPattern.length() - 1 - i);
-      } else if (DemandedBitsPattern[i] != '0') {
+    if (CurTok.str() == "demandedBits") {
+      DemandedBitsCount++;
+      if (DemandedBitsCount > 1) {
+        ErrStr = makeErrStr("only one demandedbits attribute is allowed");
+        return false;
+      }
+      if (!consumeToken(ErrStr))
+        return false;
+      if (CurTok.K != Token::Eq) {
+        ErrStr = makeErrStr("expected '=' for demandedBits");
+        return false;
+      }
+      if (!consumeToken(ErrStr))
+        return false;
+      if (CurTok.K != Token::UntypedInt) {
         ErrStr = makeErrStr("expected demandedBits pattern of type [0|1]+");
         return false;
       }
+      if (LHS->Width != CurTok.Len) {
+        ErrStr = makeErrStr("demandedBits pattern must be of same length as infer operand width");
+        return false;
+      }
+      std::string DemandedBitsPattern = CurTok.str();
+      for (unsigned i = 0; i < LHS->Width; ++i) {
+        if (DemandedBitsPattern[i] == '1') {
+          DemandedBitsVal += ConstOne.shl(DemandedBitsPattern.length() - 1 - i);
+        } else if (DemandedBitsPattern[i] != '0') {
+          ErrStr = makeErrStr("expected demandedBits pattern of type [0|1]+");
+          return false;
+        }
+      }
+      if (!consumeToken(ErrStr))
+        return false;
+      if (CurTok.K != Token::CloseParen) {
+        ErrStr = makeErrStr("expected ')' to complete demandedBits");
+        return false;
+      }
+      if (!consumeToken(ErrStr))
+        return false;
+      LHS->DemandedBits = DemandedBitsVal;
+    } else if (CurTok.str() == "harvestedFromUse") {
+      HarvestKindCount++;
+      if (HarvestKindCount > 1) {
+        ErrStr = makeErrStr("only one harvestFromUse attribute is allowed");
+        return false;
+      }
+      if (!consumeToken(ErrStr))
+        return false;
+      if (CurTok.K != Token::CloseParen) {
+        ErrStr = makeErrStr("expected ')' to complete harvestFromUse");
+        return false;
+      }
+      if (!consumeToken(ErrStr))
+        return false;
+      LHS->HarvestKind = HarvestType::HarvestedFromUse;
+    } else {
+      ErrStr = makeErrStr("invalid Inst attribute string");
+      return false;
     }
-    if (!consumeToken(ErrStr))
-      return false;
-    if (CurTok.K != Token::CloseParen) {
-      ErrStr = makeErrStr("expected ')' to complete demandedBits");
-      return false;
-    }
-    if (!consumeToken(ErrStr))
-      return false;
-    LHS->DemandedBits = DemandedBitsVal;
-    return true;
-  } else {
-    LHS->DemandedBits = APInt::getAllOnesValue(LHS->Width);
-    return true;
   }
+  return true;
 }
 
 bool Parser::parseLine(std::string &ErrStr) {
@@ -849,7 +857,7 @@ bool Parser::parseLine(std::string &ErrStr) {
         if (!consumeToken(ErrStr)) return false;
         InstMapping Cand = parseInstMapping(ErrStr);
         if (!ErrStr.empty()) return false;
-        if (!parseDemandedBits(ErrStr, Cand.LHS))
+        if (!parseInstAttribute(ErrStr, Cand.LHS))
           return false;
 
         if (isOverflow(Cand.LHS->K) || isOverflow(Cand.RHS->K)) {
@@ -879,8 +887,7 @@ bool Parser::parseLine(std::string &ErrStr) {
         LHS = parseInst(ErrStr);
         if (!LHS)
           return false;
-
-        if (!parseDemandedBits(ErrStr, LHS))
+        if (!parseInstAttribute(ErrStr, LHS))
           return false;
 
         if (isOverflow(LHS->K)) {
@@ -1484,4 +1491,3 @@ std::vector<ParsedReplacement> souper::ParseReplacementRHSs(
   }
   return R;
 }
-

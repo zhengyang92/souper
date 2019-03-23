@@ -77,6 +77,17 @@ bool Inst::operator<(const Inst &Other) const {
     return (*OpsA[I] < *OpsB[I]);
   }
 
+  if (HarvestKind == HarvestType::HarvestedFromDef &&
+      Other.HarvestKind == HarvestType::HarvestedFromUse) {
+    return false;
+  }
+  else if (HarvestKind == HarvestType::HarvestedFromUse &&
+           Other.HarvestKind == HarvestType::HarvestedFromDef) {
+    return true;
+  }
+
+  if (HarvestFrom != Other.HarvestFrom)
+    return HarvestFrom < Other.HarvestFrom;
   llvm_unreachable("Should have found an unequal operand");
 }
 
@@ -396,6 +407,8 @@ const char *Inst::getKindName(Kind K) {
     return "ctpop";
   case BSwap:
     return "bswap";
+  case BitReverse:
+    return "bitreverse";
   case Cttz:
     return "cttz";
   case Ctlz:
@@ -478,6 +491,7 @@ Inst::Kind Inst::getKind(std::string Name) {
                    .Case("sle", Inst::Sle)
                    .Case("ctpop", Inst::CtPop)
                    .Case("bswap", Inst::BSwap)
+                   .Case("bitreverse", Inst::BitReverse)
                    .Case("cttz", Inst::Cttz)
                    .Case("ctlz", Inst::Ctlz)
                    .Case("fshl", Inst::FShl)
@@ -507,6 +521,11 @@ void Inst::Profile(llvm::FoldingSetNodeID &ID) const {
     ID.AddPointer(B);
     break;
   default:
+    if (!DemandedBits.isAllOnesValue())
+      ID.Add(DemandedBits);
+    if (HarvestKind == HarvestType::HarvestedFromUse) {
+      ID.Add(HarvestFrom);
+    }
     break;
   }
 
@@ -671,6 +690,8 @@ Inst *InstContext::getInst(Inst::Kind K, unsigned Width,
   N->Ops = *InstOps;
   N->DemandedBits = DemandedBits;
   N->Available = Available;
+  N->HarvestKind = HarvestType::HarvestedFromDef;
+  N->HarvestFrom = nullptr;
   InstSet.InsertNode(N, IP);
   return N;
 }
@@ -794,13 +815,16 @@ void souper::PrintReplacement(llvm::raw_ostream &Out,
   Context.printBlockPCs(BPCs, Out, printNames);
   std::string SRef = Context.printInst(Mapping.LHS, Out, printNames);
   std::string RRef = Context.printInst(Mapping.RHS, Out, printNames);
+  Out << "cand " << SRef << " " << RRef;
   if (!Mapping.LHS->DemandedBits.isAllOnesValue()) {
-    Out << "cand " << SRef << " " << RRef << " (" << "demandedBits="
-        << Inst::getDemandedBitsString(Mapping.LHS->DemandedBits)
-        << ")" << '\n';
-  } else {
-    Out << "cand " << SRef << " " << RRef << '\n';
+    Out<< " (" << "demandedBits="
+       << Inst::getDemandedBitsString(Mapping.LHS->DemandedBits)
+       << ")";
   }
+  if (Mapping.LHS->HarvestKind == HarvestType::HarvestedFromUse) {
+    Out << " (harvestedFromUse)";
+  }
+  Out << "\n";
 }
 
 std::string souper::GetReplacementString(const BlockPCs &BPCs,
@@ -823,13 +847,17 @@ void souper::PrintReplacementLHS(llvm::raw_ostream &Out,
   Context.printPCs(PCs, Out, printNames);
   Context.printBlockPCs(BPCs, Out, printNames);
   std::string SRef = Context.printInst(LHS, Out, printNames);
+
+  Out << "infer " << SRef;
   if (!LHS->DemandedBits.isAllOnesValue()) {
-    Out << "infer " << SRef << " (" << "demandedBits="
-        << Inst::getDemandedBitsString(LHS->DemandedBits)
-        << ")" << '\n';
-  } else {
-    Out << "infer " << SRef << '\n';
+    Out<< " (" << "demandedBits="
+       << Inst::getDemandedBitsString(LHS->DemandedBits)
+       << ")";
   }
+  if (LHS->HarvestKind == HarvestType::HarvestedFromUse) {
+    Out << " (harvestedFromUse)";
+  }
+  Out << "\n";
 }
 
 std::string souper::GetReplacementLHSString(const BlockPCs &BPCs,
@@ -879,6 +907,10 @@ void souper::findCands(Inst *Root, std::vector<Inst *> &Guesses,
           continue;
         if (FilterVars && I->K == Inst::Var)
           continue;
+        if (I->K == Inst::SAddWithOverflow || I->K == Inst::UAddWithOverflow ||
+            I->K == Inst::SSubWithOverflow || I->K == Inst::USubWithOverflow ||
+            I->K == Inst::SMulWithOverflow || I->K == Inst::UMulWithOverflow)
+          continue;
         Guesses.emplace_back(I);
         if (Guesses.size() >= Max)
           return;
@@ -907,6 +939,8 @@ void souper::findVars(Inst *Root, std::vector<Inst *> &Vars) {
   }
 }
 
+
+// TODO: Convert to a more generic getGivenInst similar to hasGivenInst below
 void souper::getReservedInsts(Inst *Root, std::vector<Inst *> &ReservedInsts) {
   // breadth-first search
   std::set<Inst *> Visited;
@@ -926,7 +960,7 @@ void souper::getReservedInsts(Inst *Root, std::vector<Inst *> &ReservedInsts) {
   }
 }
 
-bool souper::hasReservedInst(Inst *Root) {
+bool souper::hasGivenInst(Inst *Root, std::function<bool(Inst*)> InstTester) {
   // breadth-first search
   std::set<Inst *> Visited;
   std::queue<Inst *> Q;
@@ -934,7 +968,7 @@ bool souper::hasReservedInst(Inst *Root) {
   while (!Q.empty()) {
     Inst *I = Q.front();
     Q.pop();
-    if (I->K == Inst::ReservedInst)
+    if (InstTester(I))
       return true;
     if (!Visited.insert(I).second)
       continue;
@@ -1013,7 +1047,13 @@ Inst *souper::instJoin(Inst *I, Inst *EmptyInst, Inst *NewInst,
   if (I == EmptyInst) {
     Copy = NewInst;
   } else if (I->K == Inst::Var) {
-    Copy = I;
+    if (I->Name.find(ReservedConstPrefix) != std::string::npos) {
+      Copy = IC.createVar(I->Width, I->Name, I->Range, I->KnownZeros,
+                          I->KnownOnes, I->NonZero, I->NonNegative,
+                          I->PowOfTwo, I->Negative, I->NumSignBits);
+    } else {
+      Copy = I;
+    }
   } else {
     Copy = IC.getInst(I->K, I->Width, Ops);
   }

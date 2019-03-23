@@ -29,8 +29,11 @@
 
 namespace souper {
 
+enum class HarvestType { HarvestedFromDef, HarvestedFromUse };
+
 const unsigned MaxPreds = 100000;
 const std::string ReservedConstPrefix = "reservedconst_";
+const std::string ReservedInstPrefix = "reservedinst";
 
 struct Inst;
 
@@ -91,6 +94,7 @@ struct Inst : llvm::FoldingSetNode {
     BSwap,
     Cttz,
     Ctlz,
+    BitReverse,
     FShl,
     FShr,
     ExtractValue,
@@ -151,6 +155,8 @@ struct Inst : llvm::FoldingSetNode {
   bool Negative;
   unsigned NumSignBits;
   llvm::APInt DemandedBits;
+  HarvestType HarvestKind;
+  llvm::BasicBlock* HarvestFrom;
   llvm::ConstantRange Range=llvm::ConstantRange(1);
 };
 
@@ -270,7 +276,7 @@ Inst *instJoin(Inst *I, Inst *Reserved, Inst *NewInst, InstContext &IC);
 
 void findVars(Inst *Root, std::vector<Inst *> &Vars);
 
-bool hasReservedInst(Inst *Root);
+bool hasGivenInst(Inst *Root, std::function<bool(Inst*)> InstTester);
 void getReservedInsts(Inst *Root, std::vector<Inst *> &ReservedInsts);
 
 void separateBlockPCs(const BlockPCs &BPCs, BlockPCs &BPCsCopy,

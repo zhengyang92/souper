@@ -69,14 +69,8 @@ TEST(ParserTest, Errors) {
         "<input>:3:9: block %2 is undeclared" },
       { ",\n", "<input>:1:1: expected inst, block, cand, infer, result, pc, "
         "or blockpc" },
-      { "%0:i128 = var ; 0\n%1:i128 = bswap %0\n",
-        "<input>:2:1: bswap doesn't support 128 bits" },
-      { "%0:i33 = var ; 0\n%1:i33 = ctpop %0\n",
-        "<input>:2:1: ctpop doesn't support 33 bits" },
-      { "%0:i70 = var ; 0\n%1:i70 = cttz %0\n",
-        "<input>:2:1: cttz doesn't support 70 bits" },
-      { "%0:i128 = var ; 0\n%1:i128 = ctlz %0\n",
-        "<input>:2:1: ctlz doesn't support 128 bits" },
+      { "%0:i40 = var ; 0\n%1:i40 = bswap %0\n",
+        "<input>:2:1: bswap argument must be a multiple of 16 bits" },
       { "%0:i4 = var (knownBits=00010)\n",
         "<input>:1:1: knownbits pattern must be of same length as var width" },
       { "%0:i4 = var (knownBits=1xx00)\n",
@@ -341,13 +335,13 @@ TEST(ParserTest, FullReplacementErrors) {
       { "cand 0:i1 0:i1\ncand 0:i1 0:i1\n",
         "<input>:2:1: expected a single replacement" },
       { "%0:i4 = var ; 0\n%1:i4 = mulnuw %0, 1:i4\ninfer %1 ()\n",
-        "<input>:3:11: missing demandedBits string" },
+        "<input>:3:11: missing Inst attribute string" },
       { "%0:i4 = var ; 0\n%1:i4 = mulnuw %0, 1:i4\ninfer %1 (addd)\n",
-        "<input>:3:11: invalid demandedBits data flow fact" },
+        "<input>:3:11: invalid Inst attribute string" },
       { "%0:i4 = var ; 0\ninfer %0 (dBits=0111)\n",
-        "<input>:2:11: invalid demandedBits data flow fact" },
+        "<input>:2:11: invalid Inst attribute string" },
       { "%0:i4 = var ; 0\ninfer %0 (0011)\n",
-        "<input>:2:11: missing demandedBits string" },
+        "<input>:2:11: missing Inst attribute string" },
       { "%0:i4 = var ; 0\ninfer %0 (demandedBits0010)\n",
         "<input>:2:23: expected '=' for demandedBits" },
       { "%0:i4 = var ; 0\ninfer %0 (demandedBits=0010\n",
@@ -363,19 +357,47 @@ TEST(ParserTest, FullReplacementErrors) {
       { "%0:i4 = var (knownBits=xxx0) (demandedBits=1111); 0\ninfer %0\n",
         "<input>:1:1: invalid data flow fact type" },
       { "%0:i4 = var ; 0\ninfer %0 (knownBits=0xxx)\n",
-        "<input>:2:11: missing demandedBits string" },
+        "<input>:2:11: missing Inst attribute string" },
       { "%0:i4 = var ; 0\ncand %0 7:i4 (demandedBits=011)\n",
         "<input>:2:28: demandedBits pattern must be of same length as infer operand width" },
       { "%0:i4 = var ; 0\ncand %0 7:i4 (0111)\n",
-        "<input>:2:15: missing demandedBits string" },
+        "<input>:2:15: missing Inst attribute string" },
       { "%0:i4 = var ; 0\ncand %0 7:i4 (demandedBit=0111)\n",
-        "<input>:2:15: invalid demandedBits data flow fact" },
+        "<input>:2:15: invalid Inst attribute string" },
       { "%0:i4 = var ; 0\ncand %0 7:i4 (demandedBits0111)\n",
         "<input>:2:27: expected '=' for demandedBits" },
       { "%0:i4 = var ; 0\ncand %0 7:i4 (demandedBits=0111\n",
         "<input>:3:1: expected ')' to complete demandedBits" },
       { "%0:i4 = var ; 0\ncand %0 7:i4 (demandedBits=2111)\n",
         "<input>:2:28: expected demandedBits pattern of type [0|1]+" },
+      { "%0:i4 = var ; 0\ninfer %0 (harvestedFromUse\n",
+        "<input>:3:1: expected ')' to complete harvestFromUse" },
+      { "%0:i4 = var ; 0\ninfer %0 (demandedBits=1111) (harvestedFromUse\n",
+        "<input>:3:1: expected ')' to complete harvestFromUse" },
+      { "%0:i4 = var ; 0\ninfer %0 (demandedBits=1111 (harvestedFromUse\n",
+        "<input>:2:29: expected ')' to complete demandedBits" },
+      { "%0:i4 = var ; 0\ninfer %0 (harvestedFromUse (demandedBits=1111\n",
+        "<input>:2:28: expected ')' to complete harvestFromUse" },
+      { "%0:i4 = var ; 0\ninfer %0 (harvestedFromUse (demandedBits=1111\n",
+        "<input>:2:28: expected ')' to complete harvestFromUse" },
+      { "%0:i4 = var ; 0\ninfer %0 (harvestedFromUse) (harvestedFromUse)\n",
+        "<input>:2:30: only one harvestFromUse attribute is allowed" },
+      { "%0:i4 = var ; 0\ninfer %0 (demandedBits=1111) (demandedBits=1111)\n",
+        "<input>:2:31: only one demandedbits attribute is allowed" },
+      { "%0:i4 = var ; 0\ninfer %0 (harvestedFromUse) (harvestedFromUse) (demandedBits=1111)\n",
+        "<input>:2:30: only one harvestFromUse attribute is allowed" },
+      { "%0:i4 = var ; 0\ninfer %0 (harvestedFromUse) (demandedBits=1111) (harvestedFromUse)\n",
+        "<input>:2:50: only one harvestFromUse attribute is allowed" },
+      { "%0:i4 = var ; 0\ninfer %0 (demandedBits=1111) (harvestedFromUse) (harvestedFromUse)\n",
+        "<input>:2:50: only one harvestFromUse attribute is allowed" },
+      { "%0:i4 = var ; 0\ninfer %0 (demandedBits=1111) (demandedBits=1111) (harvestedFromUse)\n",
+        "<input>:2:31: only one demandedbits attribute is allowed" },
+      { "%0:i4 = var ; 0\ninfer %0 (demandedBits=1111) (harvestedFromUse) (demandedBits=1111)\n",
+        "<input>:2:50: only one demandedbits attribute is allowed" },
+      { "%0:i4 = var ; 0\ninfer %0 (harvestedFromUse) (demandedBits=1111) (demandedBits=1111)\n",
+        "<input>:2:50: only one demandedbits attribute is allowed" },
+      { "%0:i4 = var ; 0\ninfer %0 (harvestedFromUse) (demandedBits=1111) (demandedBits=1100)\n",
+        "<input>:2:50: only one demandedbits attribute is allowed" },
       { "%0:i64 = var ; 0\n"
         "%1 = and %0, 1\n"
         "%2 = sadd.with.overflow %0, 1\n"
@@ -534,6 +556,21 @@ cand %2 1:i1
 %2:i1 = eq 1:i32, %1
 cand %2 1:i1
 )i",
+      R"i(%0:i33 = var ; 0
+%1:i33 = ctpop %0
+%2:i1 = eq 1:i33, %1
+cand %2 1:i1
+)i",
+      R"i(%0:i33 = var ; 0
+%1:i33 = cttz %0
+%2:i1 = eq 1:i33, %1
+cand %2 1:i1
+)i",
+      R"i(%0:i33 = var ; 0
+%1:i33 = ctlz %0
+%2:i1 = eq 1:i33, %1
+cand %2 1:i1
+)i",
       R"i(%0:i32 = var ; 0
 %1:i32 = var ; 1
 %2:i32 = fshl %0, %1, 0:i32
@@ -570,6 +607,16 @@ cand %2 %3
 %1:i32 = bswap %0
 %2:i1 = eq 1:i32, %1
 cand %2 1:i1
+)i",
+      R"i(%0:i128 = var ; 0
+%1:i128 = bswap %0
+%2:i1 = eq 1:i128, %1
+cand %2 1:i1
+)i",
+      R"i(%0:i35 = var ; 0
+%1:i35 = bitreverse %0
+%2:i1 = eq 1:i35, %1
+cand %2 0:i1
 )i",
       R"i(%0:i64 = var ; 0
 %1:i64 = xor 18446744073709551615:i64, %0
@@ -652,7 +699,15 @@ cand %1 0:i1
 %12:i65 = ssub.with.overflow %2, %11
 %13:i1 = extractvalue %12, 1:i32 (hasExternalUses)
 cand %13 0:i1
-)i"
+)i",
+      R"i(%0:i32 = var (range=[10,9)) ; 0
+%1:i1 = eq 9:i32, %0
+cand %1 0:i1 (harvestedFromUse)
+)i",
+      R"i(%0:i32 = var (range=[10,9)) ; 0
+%1:i1 = eq 9:i32, %0
+cand %1 0:i1 (demandedBits=0) (harvestedFromUse)
+)i",
   };
 
   struct {
@@ -731,6 +786,14 @@ blockpc %2 0 %1 2:i32
 blockpc %0 1 %1 3:i32
 %3:i32 = var
 cand %1 %3
+)i" },
+    {R"i(%0:i32 = var (range=[10,9))
+%1:i1 = eq 9:i32, %0
+cand %1 0:i1 (harvestedFromUse) (demandedBits=0)
+)i",
+     R"i(%0:i32 = var (range=[10,9))
+%1:i1 = eq 9:i32, %0
+cand %1 0:i1 (demandedBits=0) (harvestedFromUse)
 )i" },
   };
 

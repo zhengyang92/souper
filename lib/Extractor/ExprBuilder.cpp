@@ -320,7 +320,7 @@ Inst *ExprBuilder::getUBInstCondition(Inst *Root) {
   return Result;
 }
 
-Inst *ExprBuilder::getDemandedBitsCondition(Inst *I) {
+Inst *ExprBuilder::getDataflowConditions(Inst *I) {
   Inst *Result = LIC->getConst(llvm::APInt(1, true));
 
   if (I->K != Inst::Var)
@@ -921,7 +921,7 @@ Inst *ExprBuilder::GetCandidateExprForReplacement(
 
   // Get known bit constraints
   for (const auto &I : getVarInsts({Mapping.LHS, Mapping.RHS}))
-    Ante = LIC->getInst(Inst::And, 1, {Ante, getDemandedBitsCondition(I)});
+    Ante = LIC->getInst(Inst::And, 1, {Ante, getDataflowConditions(I)});
 
   // Get UB constraints of RHS
   Inst *RHSUB = getUBInstCondition(Mapping.RHS);
@@ -960,6 +960,20 @@ std::string BuildQuery(InstContext &IC, const BlockPCs &BPCs,
   }
 
   return EB->BuildQuery(BPCs, PCs, Mapping, ModelVars, Negate);
+}
+
+Inst *getUBInstCondition(InstContext &IC, Inst *Root) {
+  std::unique_ptr<ExprBuilder> EB;
+  switch (SMTExprBuilder) {
+  case ExprBuilder::KLEE:
+    EB = createKLEEBuilder(IC);
+    break;
+  default:
+    llvm::report_fatal_error("cannot reach here");
+    break;
+  }
+
+  return EB->getUBInstCondition(Root);
 }
 
 }

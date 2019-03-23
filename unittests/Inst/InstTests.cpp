@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "llvm/Support/raw_ostream.h"
+#include "souper/Infer/Interpreter.h"
 #include "souper/Inst/Inst.h"
 #include "gtest/gtest.h"
 
