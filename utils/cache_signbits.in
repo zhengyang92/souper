@@ -242,7 +242,7 @@ sub go($) {
     if (0) {
 	$lk = $known{$opt};
 	if (!defined($lk)) {
-	    $lk = "";
+	    $lk = "0";
 	}
     } else {
 	$lk = llvm_known($opt);
