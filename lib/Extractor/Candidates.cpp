@@ -873,7 +873,6 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
   for (auto &BB : F) {
     std::unique_ptr<BlockCandidateSet> BCS(new BlockCandidateSet);
     for (auto &I : BB) {
-      llvm::outs() << "For instruction\n";
       if (PrintNegAtReturn && isa<ReturnInst>(I)) {
         auto V = I.getOperand(0);
         auto DL = F.getParent()->getDataLayout();
