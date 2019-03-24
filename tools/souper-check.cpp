@@ -123,7 +123,7 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
       llvm::outs() << "known from souper: " << s << "\n";
       return 0;
     }
-  
+
     if (InferNonNeg) {
       APInt NonNegative;
       if (std::error_code EC = S->nonNegative(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
@@ -138,7 +138,7 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
       llvm::outs() << "known from souper: " << s << "\n";
       return 0;
     }
-  
+
     if (InferKnownBits) {
       APInt Zeros, Ones;
       if (std::error_code EC = S->knownBits(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
@@ -149,7 +149,7 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
       llvm::outs() << "known from souper: " << s << "\n";
       return 0;
     }
-  
+
     if (InferPowerTwo) {
       APInt PowTwo;
       if (std::error_code EC = S->powerTwo(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
@@ -164,7 +164,7 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
       llvm::outs() << "known from souper: " << s << "\n";
       return 0;
     }
-  
+
     if (InferNonZero) {
       APInt NonZero;
       if (std::error_code EC = S->nonZero(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
@@ -179,7 +179,7 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
       llvm::outs() << "known from souper: " << s << "\n";
       return 0;
     }
-  
+
     if (InferSignBits) {
       unsigned SignBits;
       if (std::error_code EC = S->signBits(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
@@ -198,10 +198,8 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
     if (InferRange) {
       unsigned W = Rep.Mapping.LHS->Width;
       llvm::ConstantRange Range = llvm::ConstantRange(W, /*isFullSet=*/true);
-      APInt PrevLow = Range.getLower();
-      APInt PrevUp = Range.getUpper();
       if (std::error_code EC = S->range(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
-                                        Range, PrevLow, PrevUp, IC)) {
+                                        Range, IC)) {
         llvm::errs() << EC.message() << '\n';
       }
       llvm::outs() << "known from souper: " << "[" << Range.getLower()

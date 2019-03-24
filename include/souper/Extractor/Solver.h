@@ -31,11 +31,11 @@ class Solver {
 public:
   virtual ~Solver();
   virtual std::error_code
-  infer(const BlockPCs &BPCs, const std::vector<InstMapping> &PCs, 
+  infer(const BlockPCs &BPCs, const std::vector<InstMapping> &PCs,
         Inst *LHS, Inst *&RHS, InstContext &IC) = 0;
   virtual std::error_code
   isValid(InstContext &IC, const BlockPCs &BPCs,
-          const std::vector<InstMapping> &PCs, 
+          const std::vector<InstMapping> &PCs,
           InstMapping Mapping, bool &IsValid,
           std::vector<std::pair<Inst *, llvm::APInt>> *Model) = 0;
   virtual llvm::KnownBits findKnownBitsUsingSolver(const BlockPCs &BPCs,
@@ -76,7 +76,6 @@ public:
   std::error_code range(const BlockPCs &BPCs,
                             const std::vector<InstMapping> &PCs,
                             Inst *LHS, llvm::ConstantRange &Range,
-                            llvm::APInt &PrevLow, llvm::APInt &PrevUp,
                             InstContext &IC) = 0;
   virtual
   std::error_code testDemandedBits(const BlockPCs &BPCs,
