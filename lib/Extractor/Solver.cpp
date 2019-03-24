@@ -484,7 +484,6 @@ public:
     // if x+c overflows, treat it as wrapped.
     Inst *Guess = IC.getInst(Inst::Select, 1, {SignBits, GuessOr, GuessAnd});
 
-
     std::vector<llvm::APInt> Tried;
     Inst *SubstAnte = IC.getConst(APInt(1, true));
 
@@ -618,7 +617,6 @@ public:
     if (Terminate)
       Range = llvm::ConstantRange(Good, Good + Delta);
     else {
-      llvm::errs()<<"Not found\n";
       Range = llvm::ConstantRange (W, true);
     }
 
