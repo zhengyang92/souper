@@ -254,6 +254,13 @@ sub go($) {
 	$print = 1;
 	my $llvm_stronger = 0;
 	my $souper_stronger = 0;
+    if ($lk eq "") {
+        die "llvm is not producing signbits";
+    }
+    if ($sk eq "") {
+        die "souper is not producing signbits";
+    }
+
         #FIXME for signbits
         if ($sk > $lk) {
             $souper_stronger = 1;
