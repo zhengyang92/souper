@@ -432,17 +432,14 @@ public:
     }
     // look for non-demanded bits in LHS, add up the number of non-demanded
     // bits to total number of signbits of LHS
-    unsigned count = 1;
     if (!LHS->DemandedBits.isAllOnesValue()) {
-      for (unsigned bit=W-1; bit>=0; --bit) {
-        if (LHS->DemandedBits[bit] == 0 && (LHS->DemandedBits[bit] == LHS->DemandedBits[bit-1]))
-          count++;
+      for (unsigned bit=W-(SignBits+1); bit>=0; --bit) {
+        if (LHS->DemandedBits[bit] == 0)
+          SignBits++;
         else
           break;
       }
     }
-    if (count > SignBits)
-      SignBits = count;
 
     return std::error_code();
   }
