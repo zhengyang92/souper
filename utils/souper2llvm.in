@@ -299,6 +299,7 @@ def groupPhis(insts):
                 if phi == i:
                     continue
                 deps = getInstDeps(regmap, phi, blocks)
+
                 deps.reverse()
                 # first, print dependent insts
                 for dep in deps:
@@ -332,8 +333,13 @@ def getInstDeps(regmap, i, blocks):
             queue.append(phi)
     else:
         queue.append(i)
+    visited = set()
     while len(queue):
-        reg, width, inst, ops = queue.pop(0)
+        reg, width, inst, ops = queue.pop()
+        if reg in visited:
+            continue
+        visited.add(reg)
+
         assert not inst in specialinsts
 
         for k, op in enumerate(ops):
@@ -344,9 +350,13 @@ def getInstDeps(regmap, i, blocks):
                 if ninst == "phi":
                     nblock = nops[0][0]
                     for nphi in blocks[nblock]:
+                        if nphi[0] in visited:
+                            continue
                         res.append(nphi)
                         queue.append(nphi)
                 else:
+                    if newop[0] in visited:
+                        continue
                     res.append(newop)
                     queue.append(newop)
 
