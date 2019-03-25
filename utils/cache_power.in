@@ -66,8 +66,8 @@ sub souper_known ($) {
     (my $fh, my $tmpfn) = File::Temp::tempfile();
     print $fh $opt;
     $fh->flush();
-    #my $arg = "-infer-power-two -souper-exploit-ub=false -infer-rhs -solver-timeout=30";    
-    my $arg = "-infer-power-two -infer-rhs -solver-timeout=30";    
+    #my $arg = "-infer-power-two -souper-exploit-ub=false -infer-rhs -solver-timeout=30";
+    my $arg = "-infer-power-two -infer-rhs -solver-timeout=30";
     my $cmd = "${check} $solver $arg < $tmpfn 2>/dev/null |";
     # print "<${cmd}>\n";
     open INF, $cmd;
@@ -298,7 +298,7 @@ sub wait_for_one() {
     $num_running--;
 }
 
-foreach my $opt (sort bylen keys %toprint) {
+foreach my $opt (sort bysprofile keys %toprint) {
     wait_for_one() unless $num_running < $NPROCS;
     die unless $num_running < $NPROCS;
     my $pid = fork();
