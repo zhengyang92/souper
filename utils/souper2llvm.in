@@ -298,7 +298,7 @@ def groupPhis(insts):
             for phi in blocks[block]:
                 if phi == i:
                     continue
-                deps = getInstDeps(regmap, phi)
+                deps = getInstDeps(regmap, phi, blocks)
                 deps.reverse()
                 # first, print dependent insts
                 for dep in deps:
@@ -322,19 +322,34 @@ def getRegMap(insts):
             res[reg] = i
     return res
 
-def getInstDeps(regmap, i):
+def getInstDeps(regmap, i, blocks):
     res = []
-    queue = [i]
+    reg, width, inst, ops = i
+    queue = []
+    if inst == "phi":
+        block = ops[0][0]
+        for phi in blocks[block]:
+            queue.append(phi)
+    else:
+        queue.append(i)
     while len(queue):
-        reg, width, inst, ops = queue.pop()
+        reg, width, inst, ops = queue.pop(0)
         assert not inst in specialinsts
+
         for k, op in enumerate(ops):
-            if inst == "phi" and k == 0:
-                continue
             dep = op[0]
             if dep[0] == "%" and dep in regmap:
-                res.append(regmap[dep])
-                queue.append(regmap[dep])
+                newop = regmap[dep]
+                nreg, nwidth, ninst, nops = newop
+                if ninst == "phi":
+                    nblock = nops[0][0]
+                    for nphi in blocks[nblock]:
+                        res.append(nphi)
+                        queue.append(nphi)
+                else:
+                    res.append(newop)
+                    queue.append(newop)
+
     return res
 
 def rewriteRegs(insts):
