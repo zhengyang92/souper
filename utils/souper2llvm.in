@@ -295,16 +295,13 @@ def groupPhis(insts):
             continue
         if inst == "phi":
             block = ops[0][0]
-            for phi in blocks[block]:
-                if phi == i:
-                    continue
-                deps = getInstDeps(regmap, phi, blocks)
+            deps = getInstDeps(regmap, i, blocks)
 
-                deps.reverse()
+            deps.reverse()
                 # first, print dependent insts
-                for dep in deps:
-                    if not dep in res:
-                        res.append(dep)
+            for dep in deps:
+                if not dep in res:
+                    res.append(dep)
             # second, print phis
             for phi in blocks[block]:
                 res.append(phi)
