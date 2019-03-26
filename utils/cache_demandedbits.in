@@ -63,20 +63,21 @@ die unless $solver;
 
 sub souper_known ($) {
     (my $opt) = @_;
+
     (my $fh, my $tmpfn) = File::Temp::tempfile();
     print $fh $opt;
     $fh->flush();
-    #my $arg = "-infer-demanded-bits -souper-exploit-ub=false -infer-rhs -solver-timeout=30";    
     my $arg = "-infer-demanded-bits -infer-rhs -solver-timeout=30";    
     my $cmd = "${check} $solver $arg < $tmpfn 2>/dev/null |";
     # print "<${cmd}>\n";
     open INF, $cmd;
     my $k = "";
+    my $delim = "#";
     while (my $line = <INF>) {
-	chomp $line;
-	if ($line =~ /demanded-bits from souper (.*)$/) {
-	    $k = $1;
-	}
+	    chomp $line;
+	    if ($line =~ /demanded-bits from souper (.*)$/) {
+	      $k .= $delim . $1;
+	    }
     }
     close INF;
     close $fh;
@@ -212,11 +213,13 @@ sub llvm_known($) {
     close $fh1;
     open INF, "$triager < $fn1 | $llvmas | $souper -print-demanded-bits-from-harvester |" or die;
     my $known;
+    my $delim = "#";
     while (my $line = <INF>) {
-	chomp $line;
-	if ($line =~ /demanded-bits from compiler (.*)$/) {
-	    $known = $1;
-	}
+	    chomp $line;
+	    if ($line =~ /demanded-bits from compiler (.*)$/) {
+	      #$known = $1;
+        $known .= $delim . $1;
+	    }
     }
     close INF;
     return $known if defined $known;
@@ -236,8 +239,13 @@ sub go($) {
     $ret .= "\n";
 
     my $sk = souper_known($opt);
-    $ret .= "demanded-bits from Souper:   $sk\n";
-
+    my @souper_values = split('#', $sk);
+    foreach my $souper_val (@souper_values) {
+      if ($souper_val ne '') {
+        #$ret .= "demanded-bits from Souper:   $sk\n";
+        $ret .= "demanded-bits from Souper:   $souper_val\n";
+      }
+    }
     my $lk;
     if (0) {
 	$lk = $known{$opt};
@@ -245,17 +253,22 @@ sub go($) {
 	    $lk = "";
 	    for (my $i=0; $i<length($sk); $i++) {
 		$lk .= "1";
+	      }
 	    }
-	}
     } else {
-	$lk = llvm_known($opt);
+	    $lk = llvm_known($opt);
     }
-    $ret .= "demanded-bits from compiler: $lk\n";
+    my @llvm_values = split('#', $lk);
+    foreach my $llvm_val (@llvm_values) {
+      if ($llvm_val ne '') {
+        $ret .= "demanded-bits from compiler: $llvm_val\n";
+      }
+    }
 
     my $print = 0;
     if ($sk ne $lk) {
-	$print = 1;
-	die unless length($lk) == length($sk);
+	    $print = 1;
+	    #die unless length($lk) == length($sk);
 #	my $llvm_stronger = 0;
 #	my $souper_stronger = 0;
 #	for (my $i=0; $i<length($lk); $i++) {
@@ -275,7 +288,7 @@ sub go($) {
 #	} else {
 #	    die;
 #	}
-	$ret .= "\n";
+	    $ret .= "\n";
     }
     $ret .= "\n";
     $ret .= "; total static profile = $sprofiles{$opt}\n";
