@@ -306,8 +306,16 @@ def groupPhis(insts):
             for phi in blocks[block]:
                 res.append(phi)
         else:
-            # all other insts
-            res.append(i)
+            if inst in specialinsts:
+                res.append(i)
+            else:
+                deps = getInstDeps(regmap, i, blocks)
+                deps.reverse()
+                for dep in deps:
+                    if not dep in res:
+                        res.append(dep)
+                        # all other insts
+                res.append(i)
     return res
 
 def getRegMap(insts):
@@ -372,7 +380,7 @@ def rewriteRegs(insts):
         elif inst == "cand":
             assert not cand, "cand must be empty"
             assert reg in newregs, "unknown reg %s for %s" % (reg, i)
-            rewriteOps(inst, newregs, ops)
+            rewriteOps(inst, newregs, ops, i)
             cand = [newregs[reg], width, inst, ops]
             continue
         elif inst == "infer":
@@ -386,7 +394,7 @@ def rewriteRegs(insts):
         elif inst == "result":
             assert needsResult, "infer inst not found"
             assert cand, "cand must not be empty"
-            rewriteOps(inst, newregs, ops)
+            rewriteOps(inst, newregs, ops, i)
             cand[3] = ops
             needsResult = False
             continue
@@ -406,7 +414,7 @@ def rewriteRegs(insts):
         counter += 1
         newregs[reg] = newreg
         widths[newreg] = width
-        rewriteOps(inst, newregs, ops)
+        rewriteOps(inst, newregs, ops, i)
         # special case: unroll nested insts
         if inst in nestedinsts and len(ops) > 2:
             res.append([newreg, width, inst, [ops[0], ops[1]]])
@@ -441,7 +449,7 @@ def rewriteRegs(insts):
                 res.append(newinst)
     return res
 
-def rewriteOps(inst, newregs, ops):
+def rewriteOps(inst, newregs, ops, i):
    for j, op in enumerate(ops):
        # don't change phi's first op, namely the block ref
        if inst == "phi" and j == 0:
