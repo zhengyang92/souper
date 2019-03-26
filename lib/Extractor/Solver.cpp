@@ -724,7 +724,9 @@ public:
     }
     if (Terminate)
       Range = llvm::ConstantRange(Good, Good + Delta);
-    else {
+    else if (C.getBoolValue()){
+      Range = llvm::ConstantRange (X, C);
+    } else {
       Range = llvm::ConstantRange (W, true);
     }
 
