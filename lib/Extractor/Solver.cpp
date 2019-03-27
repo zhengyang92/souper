@@ -30,6 +30,8 @@
 
 #include <unordered_map>
 
+static const int MAX_TRIES = 30;
+
 STATISTIC(MemHitsInfer, "Number of internal cache hits for infer()");
 STATISTIC(MemMissesInfer, "Number of internal cache misses for infer()");
 STATISTIC(MemHitsIsValid, "Number of internal cache hits for isValid()");
@@ -565,9 +567,8 @@ public:
 
     std::vector<llvm::APInt> Tried;
     Inst *SubstAnte = IC.getConst(APInt(1, true));
-    //    std::map<Inst *, std::vector<llvm::APInt>> SpecializationTriedVars;
 
-    for (int i = 0 ; i < 20; i ++)  {
+    for (int i = 0 ; i < MAX_TRIES; i ++)  {
       bool IsSat;
       std::vector<Inst *> ModelInstsFirstQuery;
       std::vector<llvm::APInt> ModelValsFirstQuery;
@@ -578,29 +579,6 @@ public:
         TriedAnte = IC.getInst(Inst::And, 1, {TriedAnte, Ne});
       }
       Inst *Ante = IC.getInst(Inst::And, 1, {TriedAnte, Guess});
-
-      /*
-      // Specialization
-      for (unsigned It = 0; It < 4; It++) {
-        bool HasNextInputValue = false;
-        std::map<Inst *, llvm::APInt> VarMap;
-        for (auto Var: Vars) {
-          APInt NextInput = getNextInputVal(Var, getUBInstCondition(IC, LHS), BPCs, PCs, SpecializationTriedVars, IC,
-                                            SMTSolver.get(), Timeout,
-                                            HasNextInputValue);
-
-          if (!HasNextInputValue)
-            break;
-          VarMap.insert(std::pair<Inst *, llvm::APInt>(Var, NextInput));
-        }
-        if (!HasNextInputValue)
-          break;
-
-        std::map<Inst *, Inst *> InstCache;
-        std::map<Block *, Block *> BlockCache;
-        Ante = IC.getInst(Inst::And, 1, {getInstCopy(Guess, IC, InstCache, BlockCache, &VarMap, true), Ante});
-      }
-      */
 
       Ante = IC.getInst(Inst::And, 1, {SubstAnte, Ante});
 
