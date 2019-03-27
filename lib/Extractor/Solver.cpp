@@ -681,7 +681,7 @@ public:
                         InstContext &IC) override {
     std::error_code EC;
     unsigned W = LHS->Width;
-    APInt C(W, 2);
+    APInt C(W, 1);
     APInt X;
 
     bool Found = false;
@@ -690,6 +690,8 @@ public:
       Range = llvm::ConstantRange(X, X + 1);
       return EC;
     }
+
+    C += 1;
 
     while (C.getBoolValue()) {
       Found = false;
