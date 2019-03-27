@@ -567,9 +567,6 @@ public:
     Inst *SubstAnte = IC.getConst(APInt(1, true));
     //    std::map<Inst *, std::vector<llvm::APInt>> SpecializationTriedVars;
 
-    std::vector<Inst *> Vars;
-    souper::findVars(Guess, Vars);
-
     for (int i = 0 ; i < 20; i ++)  {
       bool IsSat;
       std::vector<Inst *> ModelInstsFirstQuery;
