@@ -306,16 +306,7 @@ def groupPhis(insts):
             for phi in blocks[block]:
                 res.append(phi)
         else:
-            if inst in specialinsts:
-                res.append(i)
-            else:
-                deps = getInstDeps(regmap, i, blocks)
-                deps.reverse()
-                for dep in deps:
-                    if not dep in res:
-                        res.append(dep)
-                        # all other insts
-                res.append(i)
+            res.append(i)
     return res
 
 def getRegMap(insts):
