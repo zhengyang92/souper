@@ -629,7 +629,7 @@ public:
         return std::make_error_code(std::errc::value_too_large);
       EC = SMTSolver->isSatisfiable(Query, IsSat, ModelInstsSecondQuery.size(), &ModelValsSecondQuery, Timeout);
       if (EC)
-        return EC;
+        llvm::report_fatal_error("stopping due to error");
       if (!IsSat) {
         X = Const->Val;
         IsFound = true;
