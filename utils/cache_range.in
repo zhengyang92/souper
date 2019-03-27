@@ -236,7 +236,11 @@ sub go($) {
     $ret .= "\n";
 
     my $sk = souper_known($opt);
-    $ret .= "known from Souper:   $sk\n";
+    if ($sk eq "") {
+        $ret .= "known from Souper:   timeout\n";
+    } else {
+        $ret .= "known from Souper:   $sk\n";
+    }
 
     my $lk;
     if (0) {
