@@ -727,7 +727,7 @@ public:
     if (BinSearchHasResult)
       Range = llvm::ConstantRange(BinSearchResultX, BinSearchResultX + BinSearchResultC);
     else if (C.getBoolValue()){
-      Range = llvm::ConstantRange (X, C);
+      Range = llvm::ConstantRange (X, X + C);
     } else {
       Range = llvm::ConstantRange (W, true);
     }
