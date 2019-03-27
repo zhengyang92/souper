@@ -543,6 +543,9 @@ public:
     std::error_code EC;
     IsFound = false;
     unsigned W = LHS->Width;
+    if (!LHS->DemandedBits.isAllOnesValue()) {
+      LHS = IC.getInst(Inst::And, W, {LHS, IC.getConst(LHS->DemandedBits)});
+    }
 
     Inst *SynthesisX = IC.createVar(W, ReservedConstPrefix);
     Inst *CVal = IC.getConst(C);
