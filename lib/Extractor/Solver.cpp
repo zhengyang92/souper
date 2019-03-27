@@ -305,8 +305,22 @@ public:
       NonNegative = APInt::getNullValue(W);
     else if (testOneSign(BPCs, PCs, NonNegativeGuess, LHS, IC))
       NonNegative = NonNegativeGuess;
-    else
-      NonNegative = NonNegativeGuess; //if sign-bit is not guessed as 0 or 1, set non-negative signbit to 1, so that nothing is inferred by souper at the end
+    else {
+      // if sign-bit is not guessed as 0 or 1, set non-negative 
+      // signbit to 1, so that nothing is inferred by souper at the end
+      //NonNegative = NonNegativeGuess;
+
+      // test demandedbits
+      if (!LHS->DemandedBits.isAllOnesValue()) {
+	// nont demanded sign bit means non-neg
+	if (LHS->DemandedBits[W-1] == 0)
+          NonNegative = APInt::getNullValue(W);
+	else
+          NonNegative = NonNegativeGuess;
+      } else {
+        NonNegative = NonNegativeGuess;
+      }
+    }
     return std::error_code();
   }
 
