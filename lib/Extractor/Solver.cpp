@@ -565,7 +565,7 @@ public:
 
     std::vector<llvm::APInt> Tried;
     Inst *SubstAnte = IC.getConst(APInt(1, true));
-    std::map<Inst *, std::vector<llvm::APInt>> SpecializationTriedVars;
+    //    std::map<Inst *, std::vector<llvm::APInt>> SpecializationTriedVars;
 
     std::vector<Inst *> Vars;
     souper::findVars(Guess, Vars);
@@ -582,6 +582,7 @@ public:
       }
       Inst *Ante = IC.getInst(Inst::And, 1, {TriedAnte, Guess});
 
+      /*
       // Specialization
       for (unsigned It = 0; It < 4; It++) {
         bool HasNextInputValue = false;
@@ -602,6 +603,7 @@ public:
         std::map<Block *, Block *> BlockCache;
         Ante = IC.getInst(Inst::And, 1, {getInstCopy(Guess, IC, InstCache, BlockCache, &VarMap, true), Ante});
       }
+      */
 
       Ante = IC.getInst(Inst::And, 1, {SubstAnte, Ante});
 
@@ -683,7 +685,7 @@ public:
     APInt X;
 
     bool Found = false;
-    testRange(BPCs, PCs, LHS, C, X, Found, IC);
+    EC = testRange(BPCs, PCs, LHS, C, X, Found, IC);
     if (Found) {
       Range = llvm::ConstantRange(X, X + 1);
       return EC;
@@ -691,39 +693,37 @@ public:
 
     while (C.getBoolValue()) {
       Found = false;
-      testRange(BPCs, PCs, LHS, C, X, Found, IC);
+      EC = testRange(BPCs, PCs, LHS, C, X, Found, IC);
       if (Found)
         break;
       C<<=1;
     }
 
-    APInt l,r;
-    if (C.getBoolValue()) {
-      l = C.lshr(1);
-      r = C - 1;
-    } else {
-      l = APInt::getOneBitSet(W, W-1);
-      r = C - 1;
-    }
+    APInt L,R;
+    L = C.getBoolValue() ? C.lshr(1) : APInt::getOneBitSet(W, W-1);
+    R = C - 1;
 
-    APInt Good;
-    APInt Delta;
-    bool Terminate = false;
-    while (l.ule(r)) {
-      APInt m = l + ((r - l)).lshr(1);
-      testRange(BPCs, PCs, LHS, m, X, Found, IC);
+    APInt BinSearchResultX;
+    APInt BinSearchResultC;
+    bool BinSearchHasResult = false;
+    while (L.ule(R)) {
+      APInt M = L + ((R - L)).lshr(1);
+      APInt BinSearchX;
+      EC = testRange(BPCs, PCs, LHS, M, BinSearchX, Found, IC);
       if (Found) {
-        Good = X;
-        Terminate = true;
-        Delta = m;
-        r = m - 1;
+        R = M - 1;
+
+        // record result
+        BinSearchResultX = BinSearchX;
+        BinSearchResultC = M;
+        BinSearchHasResult = true;
       } else {
-        if (l == r) break;
-        l = m + 1;
+        if (L == R) break;
+        L = M + 1;
       }
     }
-    if (Terminate)
-      Range = llvm::ConstantRange(Good, Good + Delta);
+    if (BinSearchHasResult)
+      Range = llvm::ConstantRange(BinSearchResultX, BinSearchResultX + BinSearchResultC);
     else if (C.getBoolValue()){
       Range = llvm::ConstantRange (X, C);
     } else {
