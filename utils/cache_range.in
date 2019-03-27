@@ -66,8 +66,8 @@ sub souper_known ($) {
     (my $fh, my $tmpfn) = File::Temp::tempfile();
     print $fh $opt;
     $fh->flush();
-    #my $arg = "-infer-range -souper-exploit-ub=false -infer-rhs -solver-timeout=30";    
-    my $arg = "-infer-range -infer-rhs -solver-timeout=30";    
+    #my $arg = "-infer-range -souper-exploit-ub=false -infer-rhs -solver-timeout=30";
+    my $arg = "-infer-range -infer-rhs -solver-timeout=30";
     my $cmd = "${check} $solver $arg < $tmpfn 2>/dev/null |";
     # print "<${cmd}>\n";
     open INF, $cmd;
@@ -250,6 +250,10 @@ sub go($) {
     $ret .= "known from compiler: $lk\n";
 
     my $print = 0;
+    if ($lk ne $sk) {
+        $print = 1;
+    }
+
   #FIXME: this code to compare ranges from both llvm and souper
 #    if ($sk ne $lk) {
 #	$print = 1;
@@ -291,7 +295,7 @@ sub go($) {
 #    }
     $ret .= "------------------------------------------------------\n\n";
 #    print $ret if $print;
-    print $ret;
+    print $ret if $print;
     exit();
 }
 
