@@ -303,8 +303,10 @@ public:
     APInt NonNegativeGuess = NonNegative | APInt::getOneBitSet(W, W-1);
     if (testZeroSign(BPCs, PCs, NonNegativeGuess, LHS, IC))
       NonNegative = APInt::getNullValue(W);
-    else if (testOneSign(BPCs, PCs, NonNegativeGuess, LHS, IC))
+    else if (testOneSign(BPCs, PCs, NonNegativeGuess, LHS, IC)) {
       NonNegative = NonNegativeGuess;
+      llvm::outs() << "test One passed\n";
+    }
     else {
       // if sign-bit is not guessed as 0 or 1, set non-negative 
       // signbit to 1, so that nothing is inferred by souper at the end
@@ -320,6 +322,15 @@ public:
       } else {
         NonNegative = NonNegativeGuess;
       }
+    }
+    // test demandedbits
+    // despite of whatever SMT solver says, if demanded
+    // bits is 0 for signbit, it has to be concluded as
+    // non negative
+    if (!LHS->DemandedBits.isAllOnesValue()) {
+      // nont demanded sign bit means non-neg
+      if (LHS->DemandedBits[W-1] == 0)
+        NonNegative = APInt::getNullValue(W);
     }
     return std::error_code();
   }
