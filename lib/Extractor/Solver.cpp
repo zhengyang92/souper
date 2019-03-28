@@ -326,7 +326,7 @@ public:
       llvm::outs() << "test One passed\n";
     }
     else {
-      // if sign-bit is not guessed as 0 or 1, set non-negative 
+      // if sign-bit is not guessed as 0 or 1, set non-negative
       // signbit to 1, so that nothing is inferred by souper at the end
       //NonNegative = NonNegativeGuess;
 
@@ -495,88 +495,6 @@ public:
     return AllOnes;
   }
 
-  APInt getNextInputVal(Inst *Var,
-                        Inst *LHSUB,
-                        const BlockPCs &BPCs,
-                        const std::vector<InstMapping> &PCs,
-                        std::map<Inst *, std::vector<llvm::APInt>> &TriedVars,
-                        InstContext &IC,
-                        SMTLIBSolver *SMTSolver,
-                        unsigned Timeout,
-                        bool &HasNextInputValue) {
-
-    // TODO
-    // Specialize input values respecting blockpcs
-    if (!BPCs.empty()) {
-      HasNextInputValue = false;
-      return APInt(Var->Width, 0);
-    }
-
-    HasNextInputValue = true;
-    Inst *Ante = IC.getConst(APInt(1, true));
-    Ante = IC.getInst(Inst::And, 1, {Ante, LHSUB});
-    for (auto PC : PCs ) {
-      Inst* Eq = IC.getInst(Inst::Eq, 1, {PC.LHS, PC.RHS});
-      Inst* PCUB = getUBInstCondition(IC, Eq);
-      Ante = IC.getInst(Inst::And, 1, {Ante, Eq});
-      Ante = IC.getInst(Inst::And, 1, {Ante, PCUB});
-    }
-
-    // If a variable is neither found in PCs or TriedVar, return APInt(0)
-    bool VarHasTried = TriedVars.find(Var) != TriedVars.end();
-    if (!VarHasTried) {
-      std::vector<Inst *> VarsInPCs;
-      souper::findVars(Ante, VarsInPCs);
-      if (std::find(VarsInPCs.begin(), VarsInPCs.end(), Var) == VarsInPCs.end()) {
-        TriedVars[Var].push_back(APInt(Var->Width, 0));
-        return APInt(Var->Width, 0);
-      }
-    }
-
-    for (auto Value : TriedVars[Var]) {
-      Inst* Ne = IC.getInst(Inst::Ne, 1, {Var, IC.getConst(Value)});
-      Ante = IC.getInst(Inst::And, 1, {Ante, Ne});
-    }
-
-    InstMapping Mapping(Ante, IC.getConst(APInt(1, true)));
-
-    std::vector<Inst *> ModelInsts;
-    std::vector<llvm::APInt> ModelVals;
-    std::string Query = BuildQuery(IC, {}, {}, Mapping, &ModelInsts, /*Negate=*/ true);
-
-    bool PCQueryIsSat;
-    std::error_code EC;
-    EC = SMTSolver->isSatisfiable(Query, PCQueryIsSat, ModelInsts.size(), &ModelVals, Timeout);
-
-    if (EC || !PCQueryIsSat) {
-      if (VarHasTried) {
-        // If we previously generated guesses on Var, and the query becomes
-        // unsat, then clear the state and call the getNextInputVal() again to
-        // get a new guess
-        TriedVars.erase(Var);
-        return getNextInputVal(Var, LHSUB, BPCs, PCs, TriedVars, IC,
-                               SMTSolver, Timeout, HasNextInputValue);
-      } else {
-        // No guess record for Var found and query tells unsat, we can conclude
-        // that no possible guess there
-        HasNextInputValue = false;
-        return APInt(Var->Width, 0);
-      }
-    }
-    if (DebugLevel > 3)
-      llvm::errs() << "Input guess SAT\n";
-    for (unsigned I = 0 ; I != ModelInsts.size(); I++) {
-      if (ModelInsts[I] == Var) {
-        TriedVars[Var].push_back(ModelVals[I]);
-        if (DebugLevel > 3)
-          llvm::errs() << "Guess input value = " << ModelVals[I] << "\n";
-        return ModelVals[I];
-      }
-    }
-
-    llvm::report_fatal_error("Model does not contain the guess input variable");
-  }
-
   std::error_code testRange(const BlockPCs &BPCs,
                             const std::vector<InstMapping> &PCs,
                             Inst *LHS, llvm::APInt &C,
@@ -611,19 +529,14 @@ public:
     // if x+c overflows, treat it as wrapped.
     Inst *Guess = IC.getInst(Inst::Select, 1, {SignBits, GuessOr, GuessAnd});
 
-    std::vector<llvm::APInt> Tried;
     Inst *SubstAnte = IC.getConst(APInt(1, true));
+    Inst *TriedAnte =   IC.getConst(APInt(1, true));
 
     for (int i = 0 ; i < MAX_TRIES; i ++)  {
       bool IsSat;
       std::vector<Inst *> ModelInstsFirstQuery;
       std::vector<llvm::APInt> ModelValsFirstQuery;
-      Inst *TriedAnte =   IC.getConst(APInt(1, true));
 
-      for (auto T : Tried) {
-        Inst *Ne = IC.getInst(Inst::Ne, W, {SynthesisX, IC.getConst(T)});
-        TriedAnte = IC.getInst(Inst::And, 1, {TriedAnte, Ne});
-      }
       Inst *Ante = IC.getInst(Inst::And, 1, {TriedAnte, Guess});
 
       Ante = IC.getInst(Inst::And, 1, {SubstAnte, Ante});
@@ -646,8 +559,9 @@ public:
       for (unsigned J = 0; J != ModelInstsFirstQuery.size(); ++J) {
         if (ModelInstsFirstQuery[J]->Name == ReservedConstPrefix) {
           Const = IC.getConst(ModelValsFirstQuery[J]);
-          Tried.push_back(Const->Val);
           ConstMap.insert(std::pair<Inst *, llvm::APInt>(ModelInstsFirstQuery[J], Const->Val));
+          Inst *Ne = IC.getInst(Inst::Ne, W, {SynthesisX, Const});
+          TriedAnte = IC.getInst(Inst::And, 1, {TriedAnte, Ne});
           break;
         }
       }
@@ -656,8 +570,6 @@ public:
       std::map<Inst *, Inst *> InstCache;
       std::map<Block *, Block *> BlockCache;
       auto I2 = getInstCopy(Guess, IC, InstCache, BlockCache, &ConstMap, false);
-      separateBlockPCs(BPCs, BPCsCopy, InstCache, BlockCache, IC, &ConstMap, false);
-      separatePCs(PCs, PCsCopy, InstCache, BlockCache, IC, &ConstMap, false);
 
       if (!Const)
         report_fatal_error("there must be a model for the constant");
@@ -689,8 +601,6 @@ public:
           std::map<Block *, Block *> BlockCache;
           SubstAnte = IC.getInst(Inst::And, 1,
                                  {getInstCopy(Guess, IC, InstCache, BlockCache, &SubstConstMap, false), SubstAnte});
-          /*          ReplacementContext RC;
-                      RC.printInst(SubstAnte, llvm::errs(), true);*/
         }
       }
     }
