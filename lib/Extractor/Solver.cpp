@@ -544,6 +544,8 @@ public:
       InstMapping Mapping(Ante, IC.getConst(APInt(1, true)));
 
       std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, &ModelInstsFirstQuery, true);
+      if (Query.empty())
+        return std::make_error_code(std::errc::value_too_large);
       EC = SMTSolver->isSatisfiable(Query, IsSat, ModelInstsFirstQuery.size(), &ModelValsFirstQuery, Timeout);
 
       if (EC)
@@ -589,11 +591,11 @@ public:
         return EC;
       } else {
         std::map<Inst *, llvm::APInt> SubstConstMap;
-        for (unsigned J = 0; J != ModelInstsFirstQuery.size(); ++J) {
-          Inst* Var = ModelInstsFirstQuery[J];
+        for (unsigned J = 0; J != ModelInstsSecondQuery.size(); ++J) {
+          Inst* Var = ModelInstsSecondQuery[J];
 
           if (Var != SynthesisX) {
-            SubstConstMap.insert(std::pair<Inst *, llvm::APInt>(Var, ModelValsFirstQuery[J]));
+            SubstConstMap.insert(std::pair<Inst *, llvm::APInt>(Var, ModelValsSecondQuery[J]));
           }
           std::map<Inst *, Inst *> InstCache;
           std::map<Block *, Block *> BlockCache;
