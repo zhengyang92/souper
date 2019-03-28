@@ -295,17 +295,20 @@ def groupPhis(insts):
             continue
         if inst == "phi":
             block = ops[0][0]
-            deps = getInstDeps(regmap, i, blocks)
-
-            deps.reverse()
+            for phi in blocks[block]:
+                if phi == i:
+                    continue
+                deps = getInstDeps(regmap, phi)
+                deps.reverse()
                 # first, print dependent insts
-            for dep in deps:
-                if not dep in res:
-                    res.append(dep)
+                for dep in deps:
+                    if not dep in res:
+                        res.append(dep)
             # second, print phis
             for phi in blocks[block]:
                 res.append(phi)
         else:
+            # all other insts
             res.append(i)
     return res
 
@@ -319,43 +322,19 @@ def getRegMap(insts):
             res[reg] = i
     return res
 
-def getInstDeps(regmap, i, blocks):
+def getInstDeps(regmap, i):
     res = []
-    reg, width, inst, ops = i
-    queue = []
-    if inst == "phi":
-        block = ops[0][0]
-        for phi in blocks[block]:
-            queue.append(phi)
-    else:
-        queue.append(i)
-    visited = set()
+    queue = [i]
     while len(queue):
         reg, width, inst, ops = queue.pop()
-        if reg in visited:
-            continue
-        visited.add(reg)
-
         assert not inst in specialinsts
-
         for k, op in enumerate(ops):
+            if inst == "phi" and k == 0:
+                continue
             dep = op[0]
             if dep[0] == "%" and dep in regmap:
-                newop = regmap[dep]
-                nreg, nwidth, ninst, nops = newop
-                if ninst == "phi":
-                    nblock = nops[0][0]
-                    for nphi in blocks[nblock]:
-                        if nphi[0] in visited:
-                            continue
-                        res.append(nphi)
-                        queue.append(nphi)
-                else:
-                    if newop[0] in visited:
-                        continue
-                    res.append(newop)
-                    queue.append(newop)
-
+                res.append(regmap[dep])
+                queue.append(regmap[dep])
     return res
 
 def rewriteRegs(insts):
@@ -371,7 +350,7 @@ def rewriteRegs(insts):
         elif inst == "cand":
             assert not cand, "cand must be empty"
             assert reg in newregs, "unknown reg %s for %s" % (reg, i)
-            rewriteOps(inst, newregs, ops, i)
+            rewriteOps(inst, newregs, ops)
             cand = [newregs[reg], width, inst, ops]
             continue
         elif inst == "infer":
@@ -385,7 +364,7 @@ def rewriteRegs(insts):
         elif inst == "result":
             assert needsResult, "infer inst not found"
             assert cand, "cand must not be empty"
-            rewriteOps(inst, newregs, ops, i)
+            rewriteOps(inst, newregs, ops)
             cand[3] = ops
             needsResult = False
             continue
@@ -405,7 +384,7 @@ def rewriteRegs(insts):
         counter += 1
         newregs[reg] = newreg
         widths[newreg] = width
-        rewriteOps(inst, newregs, ops, i)
+        rewriteOps(inst, newregs, ops)
         # special case: unroll nested insts
         if inst in nestedinsts and len(ops) > 2:
             res.append([newreg, width, inst, [ops[0], ops[1]]])
@@ -440,12 +419,12 @@ def rewriteRegs(insts):
                 res.append(newinst)
     return res
 
-def rewriteOps(inst, newregs, ops, i):
+def rewriteOps(inst, newregs, ops):
    for j, op in enumerate(ops):
        # don't change phi's first op, namely the block ref
        if inst == "phi" and j == 0:
            continue
-       elif op[0][0] == "%" and not "%x" in op[0]:
+       elif op[0][0] == "%" and not "%var" in op[0]:
            assert op[0] in newregs, "unknown reg %s, reordering bug in %s" % (op[0], i)
            ops[j][0] = newregs[op[0]]
 
