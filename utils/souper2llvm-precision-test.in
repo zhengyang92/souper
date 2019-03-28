@@ -20,7 +20,6 @@ import collections
 widths, knownzeros, knownones, Negative, nonNegative, powerTwo, nonZero, signBits, lower, upper, dbits = dict(), dict(), dict(), dict(), dict(), dict(), dict(), dict(), dict(), dict(), dict()
 pcmap = collections.OrderedDict()
 argmap = dict()
-varmap = dict()
 cand = None
 needsResult = False
 intrdecl = dict()
@@ -236,11 +235,11 @@ def parseInsts(lines):
 
 def propagateArgNames(insts):
     res = []
+    counter = 1
     for i in insts:
         reg, width, inst, ops = i
         if inst == "var":
-            newreg = "%var_" + reg[1:]
-            varmap[newreg] = reg
+            newreg = "%x" + str(counter)
             argmap[reg] = newreg
             widths[newreg] = width
             widthValue = width.strip("i")
@@ -261,6 +260,7 @@ def propagateArgNames(insts):
                         parsesignBits(j, newreg, int(widthValue))
                     elif "range" in j:
                         parseRange(j, newreg, int(widthValue))
+            counter += 1
             continue
         for k, op in enumerate(ops):
             if op[0] in argmap:
@@ -572,102 +572,52 @@ def printFuncHeader():
     global metadataStr
     global functionDeclStr
     global functionDeclCount
-    global cnt
-    dfa = 0
     for i, reg in enumerate(argmap.values()):
         if reg in knownzeros:
-            dfa = 1
             regnum = reg[1:]
             w = widths[reg]
-            org = regtmps[reg]
-            if regtmps[reg] == reg:
-                old = "%tmp_" + str(cnt)
-                addreg = old
-            else:
-                old = regtmps[reg]
-            cnt += 1
+            old = regtmps[reg]
             name = "%t1_" + regnum
             regtmps[reg] = name
             masks = "  " + old + " = and " + w + " " + name + ", " + str(knownzeros[reg]) + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_and\n" + masks
             regtmps[reg] = name
         if reg in knownones:
-            dfa = 1
             regnum = reg[1:]
             w = widths[reg]
-            #old = regtmps[reg]
-            org = regtmps[reg]
-            if regtmps[reg] == reg:
-                old = "%tmp_" + str(cnt)
-                addreg = old
-            else:
-                old = regtmps[reg]
-            cnt += 1
+            old = regtmps[reg]
             name = "%t2_" + regnum
             regtmps[reg] = name
             masks = "  " + old + " = or " + w + " " + name + ", " + str(knownones[reg]) + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_or\n" + masks
-            regtmps[reg] = name
         if reg in Negative:
-            dfa = 1
             regnum = reg[1:]
             w = widths[reg]
-            #old = regtmps[reg]
-            org = regtmps[reg]
-            if regtmps[reg] == reg:
-                old = "%tmp_" + str(cnt)
-                addreg = old
-            else:
-                old = regtmps[reg]
-            cnt += 1
+            old = regtmps[reg]
             name = "%t3_" + regnum
             regtmps[reg] = name
             masks = "  " + old + " = or " + w + " " + name + ", " + str(Negative[reg]) + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_negative\n" + masks
         if reg in nonNegative:
-            dfa = 1
             regnum = reg[1:]
             w = widths[reg]
-            #old = regtmps[reg]
-            org = regtmps[reg]
-            if regtmps[reg] == reg:
-                old = "%tmp_" + str(cnt)
-                addreg = old
-            else:
-                old = regtmps[reg]
-            cnt += 1
+            old = regtmps[reg]
             name = "%t4_" + regnum
             regtmps[reg] = name
             masks = "  " + old + " = and " + w + " " + name + ", " + str(nonNegative[reg]) + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_nonNegative\n" + masks
         if reg in powerTwo:
-            dfa = 1
             regnum = reg[1:]
             w = widths[reg]
-            #old = regtmps[reg]
-            org = regtmps[reg]
-            if regtmps[reg] == reg:
-                old = "%tmp_" + str(cnt)
-                addreg = old
-            else:
-                old = regtmps[reg]
-            cnt += 1
+            old = regtmps[reg]
             name = "%t5_" + regnum
             regtmps[reg] = name
             masks = "  " + old + " = shl " + w + " " + "1" + ", " + name + "\n" +\
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_powerOfTwo\n" + masks
         if reg in signBits:
-            dfa = 1
             regnum = reg[1:]
             w = widths[reg]
-            #old = regtmps[reg]
-            org = regtmps[reg]
-            if regtmps[reg] == reg:
-                old = "%tmp_" + str(cnt)
-                addreg = old
-            else:
-                old = regtmps[reg]
-            cnt += 1
+            old = regtmps[reg]
             name = "%t6_" + regnum
             regtmps[reg] = name
             global truncCount
@@ -680,17 +630,9 @@ def printFuncHeader():
             "  store " + w + " " + old + ", " + w + "* @glob_" + regnum + "_signBits\n" + masks
             truncCount += 1
         if reg in lower or reg in upper:
-            dfa = 1
             regnum = reg[1:]
             w = widths[reg]
-            #old = regtmps[reg]
-            org = regtmps[reg]
-            if regtmps[reg] == reg:
-                old = "%tmp_" + str(cnt)
-                addreg = old
-            else:
-                old = regtmps[reg]
-            cnt += 1
+            old = regtmps[reg]
             name = "%t8_" + regnum
             regtmps[reg] = name
             ptr = "%ptr_" + str(MDRangePtr)
@@ -704,17 +646,9 @@ def printFuncHeader():
             functionDeclStr += "declare void @fun_" + str(functionDeclCount) + "(" + w + "* " + ptr + ")\n"
             functionDeclCount += 1
         if reg in nonZero:
-            dfa = 1
             regnum = reg[1:]
             w = widths[reg]
-            #old = regtmps[reg]
-            org = regtmps[reg]
-            if regtmps[reg] == reg:
-                old = "%tmp_" + str(cnt)
-                addreg = old
-            else:
-                old = regtmps[reg]
-            cnt += 1
+            old = regtmps[reg]
             name = "%t7_" + regnum
             regtmps[reg] = name
             ptr = "%ptr_" + str(MDRangePtr)
@@ -727,13 +661,6 @@ def printFuncHeader():
             MDRangePtr += 1
             functionDeclStr += "declare void @fun_" + str(functionDeclCount) + "(" + w + "* " + ptr + ")\n"
             functionDeclCount += 1
-        if dfa == 1:
-            masks = masks + "\n" + "  " + reg + " = add " + widths[reg] + " " + addreg + ", 0" + "\n"
-            dfa = 0
-        else:
-            addnewreg = "%add_" + varmap[reg][1:]
-            regtmps[reg] = addnewreg
-            masks = masks + "\n" + "  " + reg + " = add " + widths[reg] + " " + addnewreg + ", 0" + "\n"
 
     # global declarations: dummy store, intrinsics
     print "target datalayout = \"e-m:e-i64:64-f80:128-n8:16:32:64-S128\"\n"
