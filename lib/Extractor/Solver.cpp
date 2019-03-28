@@ -30,7 +30,7 @@
 
 #include <unordered_map>
 
-static const int MAX_TRIES = 10;
+static const int MAX_TRIES = 30;
 
 STATISTIC(MemHitsInfer, "Number of internal cache hits for infer()");
 STATISTIC(MemMissesInfer, "Number of internal cache misses for infer()");
