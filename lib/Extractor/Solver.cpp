@@ -547,8 +547,6 @@ public:
           break;
         }
       }
-      BlockPCs BPCsCopy;
-      std::vector<InstMapping> PCsCopy;
       std::map<Inst *, Inst *> InstCache;
       std::map<Block *, Block *> BlockCache;
       auto I2 = getInstCopy(Guess, IC, InstCache, BlockCache, &ConstMap, false);
@@ -609,6 +607,8 @@ public:
     while (C.getBoolValue()) {
       Found = false;
       EC = testRange(BPCs, PCs, LHS, C, X, Found, IC);
+      if (EC)
+        llvm::report_fatal_error("stopping due to error");
       if (Found)
         break;
       C<<=1;
@@ -625,6 +625,8 @@ public:
       APInt M = L + ((R - L)).lshr(1);
       APInt BinSearchX;
       EC = testRange(BPCs, PCs, LHS, M, BinSearchX, Found, IC);
+      if (EC)
+        llvm::report_fatal_error("stopping due to error");
       if (Found) {
         R = M - 1;
 
