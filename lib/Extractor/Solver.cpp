@@ -515,7 +515,7 @@ public:
                                         {IC.getInst(Inst::Add, W, {LowerVal, CVal}),
                                             IC.getInst(Inst::UAddO, 1, {LowerVal, CVal})});
 
-    Inst *SignBits = IC.getInst(Inst::ExtractValue, 1, {UpperValOverflow, IC.getUntypedConst(llvm::APInt(W, 1))});
+    Inst *IsOverflow = IC.getInst(Inst::ExtractValue, 1, {UpperValOverflow, IC.getUntypedConst(llvm::APInt(W, 1))});
     Inst *UpperVal = IC.getInst(Inst::ExtractValue, W, {UpperValOverflow, IC.getUntypedConst(llvm::APInt(W, 0))});
 
     Inst *GuessLowerPartNonWrapped = IC.getInst(Inst::Ule, 1, {LowerVal, LHS});
@@ -527,7 +527,7 @@ public:
     Inst *GuessOr = IC.getInst(Inst::Or, 1, { GuessLowerPartNonWrapped, GuessUpperPartNonWrapped });
 
     // if x+c overflows, treat it as wrapped.
-    Inst *Guess = IC.getInst(Inst::Select, 1, {SignBits, GuessOr, GuessAnd});
+    Inst *Guess = IC.getInst(Inst::Select, 1, {IsOverflow, GuessOr, GuessAnd});
 
     Inst *SubstAnte = IC.getConst(APInt(1, true));
     Inst *TriedAnte =   IC.getConst(APInt(1, true));
@@ -538,7 +538,6 @@ public:
       std::vector<llvm::APInt> ModelValsFirstQuery;
 
       Inst *Ante = IC.getInst(Inst::And, 1, {TriedAnte, Guess});
-
       Ante = IC.getInst(Inst::And, 1, {SubstAnte, Ante});
 
       InstMapping Mapping(Ante, IC.getConst(APInt(1, true)));
@@ -548,8 +547,9 @@ public:
         return std::make_error_code(std::errc::value_too_large);
       EC = SMTSolver->isSatisfiable(Query, IsSat, ModelInstsFirstQuery.size(), &ModelValsFirstQuery, Timeout);
 
-      if (EC)
+      if (EC) {
         llvm::report_fatal_error("stopping due to error");
+      }
 
       if (!IsSat) {
         return EC;
@@ -567,12 +567,14 @@ public:
           break;
         }
       }
+      if (!Const) {
+        llvm::report_fatal_error("there must be a model for the constant");
+      }
+
       std::map<Inst *, Inst *> InstCache;
       std::map<Block *, Block *> BlockCache;
       auto I2 = getInstCopy(Guess, IC, InstCache, BlockCache, &ConstMap, false);
 
-      if (!Const)
-        report_fatal_error("there must be a model for the constant");
       // Check if the constant is valid for all inputs
       std::vector<Inst *> ModelInstsSecondQuery;
       std::vector<llvm::APInt> ModelValsSecondQuery;
@@ -583,8 +585,9 @@ public:
       if (Query.empty())
         return std::make_error_code(std::errc::value_too_large);
       EC = SMTSolver->isSatisfiable(Query, IsSat, ModelInstsSecondQuery.size(), &ModelValsSecondQuery, Timeout);
-      if (EC)
-        llvm::report_fatal_error("stopping due to error");
+      if (EC) {
+        llvm::report_fatal_error("solver returns error");
+      }
       if (!IsSat) {
         X = Const->Val;
         IsFound = true;
@@ -597,11 +600,11 @@ public:
           if (Var != SynthesisX) {
             SubstConstMap.insert(std::pair<Inst *, llvm::APInt>(Var, ModelValsSecondQuery[J]));
           }
-          std::map<Inst *, Inst *> InstCache;
-          std::map<Block *, Block *> BlockCache;
-          SubstAnte = IC.getInst(Inst::And, 1,
-                                 {getInstCopy(Guess, IC, InstCache, BlockCache, &SubstConstMap, false), SubstAnte});
         }
+        std::map<Inst *, Inst *> InstCache;
+        std::map<Block *, Block *> BlockCache;
+        SubstAnte = IC.getInst(Inst::And, 1,
+                               {getInstCopy(Guess, IC, InstCache, BlockCache, &SubstConstMap, false), SubstAnte});
       }
     }
   }
@@ -636,7 +639,7 @@ public:
 
     APInt L,R;
     L = C.getBoolValue() ? C.lshr(1) : APInt::getOneBitSet(W, W-1);
-    R = C - 1;
+    R = C.getBoolValue() ? C - 1 : APInt::getAllOnesValue(W);
 
     APInt BinSearchResultX;
     APInt BinSearchResultC;
@@ -645,8 +648,9 @@ public:
       APInt M = L + ((R - L)).lshr(1);
       APInt BinSearchX;
       EC = testRange(BPCs, PCs, LHS, M, BinSearchX, Found, IC);
-      if (EC)
+      if (EC) {
         llvm::report_fatal_error("stopping due to error");
+      }
       if (Found) {
         R = M - 1;
 
