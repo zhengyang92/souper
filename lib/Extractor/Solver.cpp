@@ -500,7 +500,10 @@ public:
                             Inst *LHS, llvm::APInt &C,
                             llvm::APInt &X,
                             bool &IsFound,
-                            InstContext &IC) {
+                            InstContext &IC,
+                            KVStore *KV) {
+
+    KV->hIncrBy("counters", "queries", 1);
     std::error_code EC;
     IsFound = false;
     unsigned W = LHS->Width;
@@ -531,6 +534,8 @@ public:
 
     Inst *SubstAnte = IC.getConst(APInt(1, true));
     Inst *TriedAnte =   IC.getConst(APInt(1, true));
+
+
 
     for (int i = 0 ; i < MAX_TRIES; i ++)  {
       bool IsSat;
@@ -607,19 +612,21 @@ public:
                                {getInstCopy(Guess, IC, InstCache, BlockCache, &SubstConstMap, false), SubstAnte});
       }
     }
+    KV->hIncrBy("counters", "max-try-exhausted", 1);
   }
 
   std::error_code range(const BlockPCs &BPCs,
                         const std::vector<InstMapping> &PCs,
                         Inst *LHS, llvm::ConstantRange &Range,
                         InstContext &IC) override {
+    KVStore *KV = new KVStore;
     std::error_code EC;
     unsigned W = LHS->Width;
     APInt C(W, 1);
     APInt X;
 
     bool Found = false;
-    EC = testRange(BPCs, PCs, LHS, C, X, Found, IC);
+    EC = testRange(BPCs, PCs, LHS, C, X, Found, IC, KV);
     if (Found) {
       Range = llvm::ConstantRange(X, X + 1);
       return EC;
@@ -629,7 +636,7 @@ public:
 
     while (C.getBoolValue()) {
       Found = false;
-      EC = testRange(BPCs, PCs, LHS, C, X, Found, IC);
+      EC = testRange(BPCs, PCs, LHS, C, X, Found, IC, KV);
       if (EC)
         llvm::report_fatal_error("stopping due to error");
       if (Found)
@@ -647,7 +654,7 @@ public:
     while (L.ule(R)) {
       APInt M = L + ((R - L)).lshr(1);
       APInt BinSearchX;
-      EC = testRange(BPCs, PCs, LHS, M, BinSearchX, Found, IC);
+      EC = testRange(BPCs, PCs, LHS, M, BinSearchX, Found, IC, KV);
       if (EC) {
         llvm::report_fatal_error("stopping due to error");
       }
