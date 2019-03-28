@@ -195,6 +195,12 @@ public:
     return !IsSat;
   }
 
+  llvm::APInt getClearedBit(unsigned Pos, unsigned W) {
+    APInt AllOnes = APInt::getAllOnesValue(W);
+    AllOnes.clearBit(Pos);
+    return AllOnes;
+  }
+
   std::error_code testDemandedBits(const BlockPCs &BPCs,
                               const std::vector<InstMapping> &PCs,
                               Inst *LHS, std::map<std::string, APInt> &ResDB_vect,
@@ -487,12 +493,6 @@ public:
     }
 
     return std::error_code();
-  }
-
-  llvm::APInt getClearedBit(unsigned Pos, unsigned W) {
-    APInt AllOnes = APInt::getAllOnesValue(W);
-    AllOnes.clearBit(Pos);
-    return AllOnes;
   }
 
   std::error_code testRange(const BlockPCs &BPCs,
