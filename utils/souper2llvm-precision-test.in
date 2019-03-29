@@ -24,7 +24,7 @@ cand = None
 needsResult = False
 intrdecl = dict()
 printedblocks = []
-labels = ["foo0"]
+labels = ["entry"]
 cnt = 0
 cnt2 = 0
 cnt3 = 0
@@ -148,6 +148,9 @@ def parseInst(i):
         assert 0, "unknown LHS: %s" % i[0]
     return [reg, width, inst, ops]
 
+
+newlabelcounter = 0
+
 def translateInstToLLVM(i):
     reg, width, inst, ops = i
     s = ""
@@ -155,17 +158,27 @@ def translateInstToLLVM(i):
         block = ops[0][0]
         philabel = "philabel" + str(block[1:])
         if not block in printedblocks:
-            printedblocks.append(block)
             global cnt3
-            if cnt3 == 0:
+            t = cnt3
+            blockcount = len(ops[1:])
+            if blockcount == 1:
                 s += "  br label %" + philabel + "\n"
-            else:
-                s += "  br label %foo" + str(cnt3) + "\n"
+            if blockcount >= 2:
+                global newlabelcounter
+                for i in range(blockcount):
+                    if i == blockcount - 1:
+                        s += "  br label %foo" + str(t) + "\n"
+                    else:
+                        s += "  %sw" +str(newlabelcounter) + " = icmp eq i64 %_phiinput, " + str(newlabelcounter) + "\n"
+                        s += "  br i1 %sw" +str(newlabelcounter) +" , label %nl"+ str(newlabelcounter) +", label %foo" + str(t) + "\n"
+                        s += "nl"+ str(newlabelcounter) +":\n"
+                        newlabelcounter += 1
+                        t += 1
+
+            printedblocks.append(block)
+
             for k in range(len(ops[1:])):
                 # don't print the first label of the func
-                if cnt3 == 0:
-                    cnt3 += 1
-                    continue
                 label = "foo" + str(cnt3)
                 cnt3 += 1
                 labels.append(label)
@@ -681,9 +694,8 @@ def printFuncHeader():
     # print args
     for i, reg in enumerate(argmap.values()):
         sys.stdout.write(widths[reg] + " " + regtmps[reg])
-        if i < len(argmap)-1:
-            sys.stdout.write(", ")
-    print ") {"
+        sys.stdout.write(", ")
+    print "i64 %_phiinput) {"
     # first label
     print labels[0] + ":"
     print masks
