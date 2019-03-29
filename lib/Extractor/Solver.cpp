@@ -297,36 +297,12 @@ public:
     unsigned W = LHS->Width;
     NonNegative = APInt::getNullValue(W);
     APInt NonNegativeGuess = NonNegative | APInt::getOneBitSet(W, W-1);
-    if (testZeroSign(BPCs, PCs, NonNegativeGuess, LHS, IC))
+    if (testZeroSign(BPCs, PCs, NonNegativeGuess, LHS, IC)) {
       NonNegative = APInt::getNullValue(W);
-    else if (testOneSign(BPCs, PCs, NonNegativeGuess, LHS, IC)) {
+    } else if (testOneSign(BPCs, PCs, NonNegativeGuess, LHS, IC)) {
       NonNegative = NonNegativeGuess;
-      llvm::outs() << "test One passed\n";
-    }
-    else {
-      // if sign-bit is not guessed as 0 or 1, set non-negative
-      // signbit to 1, so that nothing is inferred by souper at the end
-      //NonNegative = NonNegativeGuess;
-
-      // test demandedbits
-      if (!LHS->DemandedBits.isAllOnesValue()) {
-	// nont demanded sign bit means non-neg
-	if (LHS->DemandedBits[W-1] == 0)
-          NonNegative = APInt::getNullValue(W);
-	else
-          NonNegative = NonNegativeGuess;
-      } else {
-        NonNegative = NonNegativeGuess;
-      }
-    }
-    // test demandedbits
-    // despite of whatever SMT solver says, if demanded
-    // bits is 0 for signbit, it has to be concluded as
-    // non negative
-    if (!LHS->DemandedBits.isAllOnesValue()) {
-      // nont demanded sign bit means non-neg
-      if (LHS->DemandedBits[W-1] == 0)
-        NonNegative = APInt::getNullValue(W);
+    } else {
+      NonNegative = NonNegativeGuess;
     }
     return std::error_code();
   }
@@ -348,18 +324,6 @@ public:
       APInt OneGuess = Ones | APInt::getOneBitSet(W, I);
       if (testKnown(BPCs, PCs, Zeros, OneGuess, LHS, IC))
         Ones = OneGuess;
-    }
-    // now verify if a bit is not guessed as zero and
-    // it is not-demanded, conclude it as known zero.
-    APInt ConstOne = APInt(W, 1);
-    for (unsigned J=0; J<W; J++) {
-      if (!LHS->DemandedBits.isAllOnesValue()) {
-        if (!((LHS->DemandedBits.getHiBits(W-J) & ConstOne).getBoolValue()) &&
-            !((Zeros.getHiBits(W-J) & ConstOne).getBoolValue())) {
-          // make a zero guess
-          Zeros = Zeros | APInt::getOneBitSet(W, J);
-        }
-      }
     }
     return std::error_code();
   }
@@ -453,17 +417,6 @@ public:
         break;
       }
     }
-    // look for non-demanded bits in LHS, add up the number of non-demanded
-    // bits to total number of signbits of LHS
-    if (!LHS->DemandedBits.isAllOnesValue()) {
-      for (unsigned bit=W-(SignBits+1); bit>=0; --bit) {
-        if (LHS->DemandedBits[bit] == 0)
-          SignBits++;
-        else
-          break;
-      }
-    }
-
     return std::error_code();
   }
 
@@ -893,7 +846,7 @@ public:
     Inst *Mask = IC.getConst(Zeros | Ones);
     InstMapping Mapping(IC.getInst(Inst::And, W, { LHS, Mask }), IC.getConst(Ones));
     bool IsSat;
-    //Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
+    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
     std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                   IsSat, 0, 0, Timeout);
     if (EC)
