@@ -181,12 +181,16 @@ public:
                               InstContext &IC) override {
 
     unsigned W = LHS->Width;
+
+    if (!LHS->DemandedBits.isAllOnesValue()) {
+      LHS = IC.getInst(Inst::And, W, {LHS, IC.getConst(LHS->DemandedBits)});
+    }
+
     std::map<Inst *, Inst *> InstCache;
     std::map<Block *, Block *> BlockCache;
     std::map<std::string, unsigned> vars_vect;
     std::set<Inst *> Visited;
     findVarsAndWidth(LHS, vars_vect, Visited);
-    llvm::errs()<<vars_vect.size();
 
     for (auto const &PC : PCs) {
       Visited.clear();
@@ -194,7 +198,6 @@ public:
       Visited.clear();
       findVarsAndWidth(PC.RHS, vars_vect, Visited);
     }
-    llvm::errs()<<"Hello";
 
     // for each var
     for (std::map<std::string,unsigned>::iterator it = vars_vect.begin();
@@ -206,8 +209,6 @@ public:
 
       // for each bit of var
       for (unsigned bit=0; bit<var_width; bit++) {
-        llvm::errs()<<bit;
-
         std::map<Inst *, Inst *> InstCacheSet;
         Inst *SetLHS = db_traverse(LHS, bit, IC, var_name, false, InstCacheSet);
 /*
