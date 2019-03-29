@@ -252,7 +252,6 @@ public:
     Inst *Mask = IC.getConst(Negative);
     InstMapping Mapping(IC.getInst(Inst::And, W, { LHS, Mask }), IC.getConst(Zero));
     bool IsSat;
-    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
     std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                   IsSat, 0, 0, Timeout);
     if (EC)
@@ -268,7 +267,6 @@ public:
     Inst *Mask = IC.getConst(Negative);
     InstMapping Mapping(IC.getInst(Inst::And, W, { LHS, Mask }), Mask);
     bool IsSat;
-    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
     std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                   IsSat, 0, 0, Timeout);
     if (EC)
@@ -344,7 +342,6 @@ public:
     InstMapping Mapping(PowerTwoInst, True);
     //InstMapping Mapping(PowerMask, Zero);
     bool IsSat;
-    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
     std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                   IsSat, 0, 0, Timeout);
     if (EC)
@@ -369,7 +366,6 @@ public:
     Inst *NonZeroGuess = IC.getInst(Inst::Ne, 1, {LHS, Zero});
     InstMapping Mapping(NonZeroGuess, True);
     bool IsSat;
-    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
     std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                   IsSat, 0, 0, Timeout);
     if (EC)
@@ -404,7 +400,6 @@ public:
       Inst *Guess = IC.getInst(Inst::Or, 1, {Guess1, Guess2});
       InstMapping Mapping(Guess, True);
       bool IsSat;
-      Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
       std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                     IsSat, 0, 0, Timeout);
       if (EC)
@@ -432,9 +427,6 @@ public:
     std::error_code EC;
     IsFound = false;
     unsigned W = LHS->Width;
-    if (!LHS->DemandedBits.isAllOnesValue()) {
-      LHS = IC.getInst(Inst::And, W, {LHS, IC.getConst(LHS->DemandedBits)});
-    }
 
     Inst *SynthesisX = IC.createVar(W, ReservedConstPrefix);
     Inst *CVal = IC.getConst(C);
@@ -846,7 +838,6 @@ public:
     Inst *Mask = IC.getConst(Zeros | Ones);
     InstMapping Mapping(IC.getInst(Inst::And, W, { LHS, Mask }), IC.getConst(Ones));
     bool IsSat;
-    Mapping.LHS->DemandedBits = APInt::getAllOnesValue(Mapping.LHS->Width);
     std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs, Mapping, 0),
                                                   IsSat, 0, 0, Timeout);
     if (EC)
