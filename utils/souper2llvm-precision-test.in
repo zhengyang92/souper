@@ -390,9 +390,9 @@ def rewriteRegs(insts):
         elif inst == "infer":
             assert not cand, "cand must be empty"
             cand = [newregs[reg], width, inst, ops]
-            for k in cand[3]:
-                if "demandedBits" in k:
-                    parseDemandedBits(k, cand[0])
+#            for k in cand[3]:
+#                if "demandedBits" in k:
+#                    parseDemandedBits(k, cand[0])
             needsResult = True
             break
         elif inst == "result":
@@ -687,7 +687,7 @@ def printFuncHeader():
         print "@glob_" + reg[1:] + "_nonZero = external global " + widths[reg]
         print "@glob_" + reg[1:] + "_signBits = external global " + widths[reg]
         print "@glob_" + reg[1:] + "_range = external global " + widths[reg]
-    print "@glob_" + str(db_counter) + "_demandedBits = external global " + cand[1]
+#    print "@glob_" + str(db_counter) + "_demandedBits = external global " + cand[1]
     for decl in intrdecl.values():
         print decl
     print "\ndefine " + cand[1] + " @foo(",
@@ -763,15 +763,15 @@ def printLHSFuncFooter():
     if len(cand[3]) > 0:
         global db_counter
         for k in cand[3]:
-            if "demandedBits" in k:
-                dbinst = ""
-                dbinst = "  " + "%db" + " = and " + cand[1] + " " + cand[0] + ", " + str(dbits[cand[0]]) + "\n" +\
-                "  store " + cand[1] + " " + "%db" + ", " + cand[1] + "* @glob_" + str(db_counter) + "_demandedBits\n"
-                db_counter += 1
-                print dbinst
-                print "  ret " + cand[1] + " " + "%db"
-            else:
-                print "  ret " + cand[1] + " " + cand[0]
+#            if "demandedBits" in k:
+#                dbinst = ""
+#                dbinst = "  " + "%db" + " = and " + cand[1] + " " + cand[0] + ", " + str(dbits[cand[0]]) + "\n" +\
+#                "  store " + cand[1] + " " + "%db" + ", " + cand[1] + "* @glob_" + str(db_counter) + "_demandedBits\n"
+#                db_counter += 1
+#                print dbinst
+#                print "  ret " + cand[1] + " " + "%db"
+#            else:
+            print "  ret " + cand[1] + " " + cand[0]
     else:
         print "  ret " + cand[1] + " " + cand[0]
     print "}"
