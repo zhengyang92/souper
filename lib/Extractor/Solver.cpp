@@ -77,41 +77,43 @@ public:
   BaseSolver(std::unique_ptr<SMTLIBSolver> SMTSolver, unsigned Timeout)
       : SMTSolver(std::move(SMTSolver)), Timeout(Timeout) {}
 
-  void findVarsAndWidth(Inst *node, std::map<std::string, unsigned> &var_vect) {
+  void findVarsAndWidth(Inst *node, std::map<std::string, unsigned> &var_vect, std::set<Inst *> &Visited) {
+    if (Visited.find(node) == Visited.end()) {
+      Visited.insert(node);
+    } else {
+      return;
+    }
+
     if (node->K == Inst::Var) {
       std::string name = node->Name;
       //var_vect[name] = node->Width;
       var_vect.insert(std::pair<std::string, unsigned>(name, node->Width));
     }
     for (auto const &Op : node->Ops) {
-      findVarsAndWidth(Op, var_vect);
+      findVarsAndWidth(Op, var_vect, Visited);
     }
   }
 
-  void findMoreVarsViaPC(Inst *node,
-                        std::map<std::string, unsigned> &var_vect) {
-    if (node->K == Inst::Var) {
-      std::string name = node->Name;
-      //var_vect[name] = node->Width;
-      var_vect.insert(std::pair<std::string, unsigned>(name, node->Width));
-    }
-    for (auto const &Op : node->Ops) {
-      findMoreVarsViaPC(Op, var_vect);
-    }
-  }
+  Inst * db_traverse(Inst *node, unsigned bitPos, InstContext &IC, std::string var_name, bool IsClear, std::map<Inst *, Inst *> &InstCache) {
+    if (InstCache.count(node))
+      return InstCache.at(node);
 
-  Inst * set_traverse(Inst *node, unsigned bitPos, InstContext &IC, std::string var_name) {
     std::vector<Inst *> Ops;
     for (auto const &Op : node->Ops) {
-      Ops.push_back(set_traverse(Op, bitPos, IC, var_name));
+      Ops.push_back(db_traverse(Op, bitPos, IC, var_name, IsClear, InstCache));
     }
 
     Inst *Copy = nullptr;
     if ((node->K == Inst::Var) && (node->Name == var_name)) {
       unsigned VarWidth = node->Width;
-      APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
-      Inst *SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
-
+      Inst *SetMask;
+      if (IsClear) {
+        APInt SetBit = APInt::getOneBitSet(VarWidth, bitPos);
+        SetMask = IC.getInst(Inst::Or, VarWidth, {node, IC.getConst(SetBit)}); //xxxx || 0001
+      } else {
+        APInt ClearBit = getClearedBit(bitPos, VarWidth); //1110
+        SetMask = IC.getInst(Inst::And, VarWidth, {node, IC.getConst(ClearBit)}); //xxxx && 1110
+      }
       Copy = SetMask;
     } else if (node->K == Inst::Var && node->Name != var_name) {
       return node;
@@ -124,35 +126,7 @@ public:
       Copy = IC.getInst(node->K, node->Width, Ops);
     }
     assert(Copy);
-
-    return Copy;
-  }
-
-  Inst * clear_traverse(Inst *node, unsigned bitPos, InstContext &IC, std::string var_name) {
-    std::vector<Inst *> Ops;
-    for (auto const &Op : node->Ops) {
-      Ops.push_back(clear_traverse(Op, bitPos, IC, var_name));
-    }
-
-    Inst *Copy = nullptr;
-    if (node->K == Inst::Var && node->Name == var_name) {
-      unsigned VarWidth = node->Width;
-      APInt ClearBit = getClearedBit(bitPos, VarWidth); //1110
-      Inst *SetMask = IC.getInst(Inst::And, VarWidth, {node, IC.getConst(ClearBit)}); //xxxx && 1110
-
-      Copy = SetMask;
-    } else if (node->K == Inst::Var && node->Name != var_name) {
-      return node;
-    } else if (node->K == Inst::Const || node->K == Inst::UntypedConst) {
-      return node;
-    } else if (node->K == Inst::Phi) {
-      auto BlockCopy = IC.createBlock(node->B->Preds);
-      Copy = IC.getPhi(BlockCopy, Ops);
-    } else {
-      Copy = IC.getInst(node->K, node->Width, Ops);
-    }
-    assert(Copy);
-
+    InstCache[node] = Copy;
     return Copy;
   }
 
@@ -205,17 +179,22 @@ public:
                               const std::vector<InstMapping> &PCs,
                               Inst *LHS, std::map<std::string, APInt> &ResDB_vect,
                               InstContext &IC) override {
+
     unsigned W = LHS->Width;
     std::map<Inst *, Inst *> InstCache;
     std::map<Block *, Block *> BlockCache;
-
     std::map<std::string, unsigned> vars_vect;
-    findVarsAndWidth(LHS, vars_vect);
+    std::set<Inst *> Visited;
+    findVarsAndWidth(LHS, vars_vect, Visited);
+    llvm::errs()<<vars_vect.size();
 
     for (auto const &PC : PCs) {
-      findMoreVarsViaPC(PC.LHS, vars_vect);
-      findMoreVarsViaPC(PC.RHS, vars_vect);
+      Visited.clear();
+      findVarsAndWidth(PC.LHS, vars_vect, Visited);
+      Visited.clear();
+      findVarsAndWidth(PC.RHS, vars_vect, Visited);
     }
+    llvm::errs()<<"Hello";
 
     // for each var
     for (std::map<std::string,unsigned>::iterator it = vars_vect.begin();
@@ -227,7 +206,10 @@ public:
 
       // for each bit of var
       for (unsigned bit=0; bit<var_width; bit++) {
-        Inst *SetLHS = set_traverse(LHS, bit, IC, var_name);
+        llvm::errs()<<bit;
+
+        std::map<Inst *, Inst *> InstCacheSet;
+        Inst *SetLHS = db_traverse(LHS, bit, IC, var_name, false, InstCacheSet);
 /*
         llvm::errs()<<"R1-----\n";
         ReplacementContext RC1;
@@ -236,7 +218,8 @@ public:
         RC2.printInst(LHS, llvm::errs(), true);
         llvm::errs()<<"R1-----\n";
 */
-        Inst *ClearLHS = clear_traverse(LHS, bit, IC, var_name);
+        std::map<Inst *, Inst *> InstCacheClear;
+        Inst *ClearLHS = db_traverse(LHS, bit, IC, var_name, true, InstCacheClear);
 /*
         llvm::errs()<<"R2-----\n";
         ReplacementContext RC3;
@@ -251,18 +234,6 @@ public:
         } else {
           // demanded
           ResultDB |= APInt::getOneBitSet(var_width, bit);
-        }
-      }
-
-      // verify if LHS has non-AllOnes demanded bits,
-      // and, ResultDB for a variable has 1 in any bit-position for
-      // which LHS->DB has 0 in it, conclude the bit to be non-demanded.
-      if (!LHS->DemandedBits.isAllOnesValue()) {
-        for (unsigned J=0; J<var_width; ++J) {
-          if (ResultDB[J] == 1 && LHS->DemandedBits[J] == 0) {
-            APInt ClearBit = getClearedBit(J, var_width);
-            ResultDB &= ClearBit;
-          }
         }
       }
 
