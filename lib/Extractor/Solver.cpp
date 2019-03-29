@@ -77,20 +77,19 @@ public:
   BaseSolver(std::unique_ptr<SMTLIBSolver> SMTSolver, unsigned Timeout)
       : SMTSolver(std::move(SMTSolver)), Timeout(Timeout) {}
 
-  void findVarsAndWidth(Inst *node, std::map<std::string, unsigned> &var_vect, std::set<Inst *> &Visited) {
-    if (Visited.find(node) == Visited.end()) {
-      Visited.insert(node);
-    } else {
-      return;
-    }
-
-    if (node->K == Inst::Var) {
-      std::string name = node->Name;
-      //var_vect[name] = node->Width;
-      var_vect.insert(std::pair<std::string, unsigned>(name, node->Width));
-    }
-    for (auto const &Op : node->Ops) {
-      findVarsAndWidth(Op, var_vect, Visited);
+  void findVarsAndWidth(Inst *node, std::map<std::string, unsigned> &var_vect) {
+    std::set<Inst *> Visited;
+    std::queue<Inst *> Q;
+    Q.push(node);
+    while (!Q.empty()) {
+      Inst *I = Q.front();
+      Q.pop();
+      if (!Visited.insert(I).second)
+        continue;
+      if (I->K == Inst::Var)
+        var_vect.insert(std::pair<std::string, unsigned>(I->Name, I->Width));
+      for (auto Op : I->Ops)
+        Q.push(Op);
     }
   }
 
@@ -189,14 +188,11 @@ public:
     std::map<Inst *, Inst *> InstCache;
     std::map<Block *, Block *> BlockCache;
     std::map<std::string, unsigned> vars_vect;
-    std::set<Inst *> Visited;
-    findVarsAndWidth(LHS, vars_vect, Visited);
+    findVarsAndWidth(LHS, vars_vect);
 
     for (auto const &PC : PCs) {
-      Visited.clear();
-      findVarsAndWidth(PC.LHS, vars_vect, Visited);
-      Visited.clear();
-      findVarsAndWidth(PC.RHS, vars_vect, Visited);
+      findVarsAndWidth(PC.LHS, vars_vect);
+      findVarsAndWidth(PC.RHS, vars_vect);
     }
 
     // for each var
