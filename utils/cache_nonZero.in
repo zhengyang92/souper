@@ -287,7 +287,8 @@ sub go {
     $ret .= "------------------------------------------------------\n\n";
 #    print $ret if $print;
     if ($print) {
-        open(my $fh, '>', 'nonzero_' . $counter);
+        my $fname = 'nonzero_' . sprintf("%08d", $counter);
+        open(my $fh, '>', $fname);
         print $fh $ret;
         close $fh;
     }
