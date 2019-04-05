@@ -32,6 +32,8 @@
 
 static const int MAX_TRIES = 10;
 
+static bool Debug = true;
+
 STATISTIC(MemHitsInfer, "Number of internal cache hits for infer()");
 STATISTIC(MemMissesInfer, "Number of internal cache misses for infer()");
 STATISTIC(MemHitsIsValid, "Number of internal cache hits for isValid()");
@@ -535,42 +537,44 @@ public:
     KVStore *KV = new KVStore;
     std::error_code EC;
     unsigned W = LHS->Width;
-    APInt C(W, 1);
-    APInt X;
 
     bool Found = false;
-    EC = testRange(BPCs, PCs, LHS, C, X, Found, IC, KV);
-    if (Found) {
-      Range = llvm::ConstantRange(X, X + 1);
-      return EC;
-    }
-
-    C += 1;
-
-    while (C.getBoolValue()) {
-      Found = false;
-      EC = testRange(BPCs, PCs, LHS, C, X, Found, IC, KV);
-      if (EC)
-        llvm::report_fatal_error("stopping due to error");
-      if (Found)
-        break;
-      C<<=1;
-    }
 
     APInt L,R;
-    L = C.getBoolValue() ? C.lshr(1) : APInt::getOneBitSet(W, W-1);
-    R = C.getBoolValue() ? C - 1 : APInt::getAllOnesValue(W);
+    L = APInt(W, 1);
+    R = APInt::getAllOnesValue(W);
 
     APInt BinSearchResultX;
     APInt BinSearchResultC;
     bool BinSearchHasResult = false;
     while (L.ule(R)) {
       APInt M = L + ((R - L)).lshr(1);
+
       APInt BinSearchX;
       EC = testRange(BPCs, PCs, LHS, M, BinSearchX, Found, IC, KV);
       if (EC) {
         llvm::report_fatal_error("stopping due to error");
       }
+      if (Debug)  {
+        llvm::errs()<< "L: ";
+        L.print(llvm::errs(), false);
+        llvm::errs()<< " M:";
+        M.print(llvm::errs(), false);
+        llvm::errs()<< " R:";
+        R.print(llvm::errs(), false);
+
+        llvm::errs()<< "\n";
+        if (Found) {
+          llvm::errs()<< "testRange() found constant:";
+          BinSearchX.print(llvm::errs(), false);
+          llvm::errs()<< "\n";
+        }
+        else {
+          llvm::errs()<< "testRange() failed\n";
+        }
+      }
+
+
       if (Found) {
         R = M - 1;
 
@@ -583,10 +587,12 @@ public:
         L = M + 1;
       }
     }
-    if (BinSearchHasResult)
-      Range = llvm::ConstantRange(BinSearchResultX, BinSearchResultX + BinSearchResultC);
-    else if (C.getBoolValue()){
-      Range = llvm::ConstantRange (X, X + C);
+    if (BinSearchHasResult) {
+      if (BinSearchResultC == APInt::getAllOnesValue(W)) {
+        Range = llvm::ConstantRange (W, true);
+      } else {
+        Range = llvm::ConstantRange(BinSearchResultX, BinSearchResultX + BinSearchResultC);
+      }
     } else {
       Range = llvm::ConstantRange (W, true);
     }
