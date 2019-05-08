@@ -9,6 +9,7 @@
 
 #include <unordered_map>
 
+using namespace souper;
 using namespace llvm;
 
 namespace {
@@ -38,6 +39,19 @@ static cl::opt<int> MaxLHSSize("souper-max-lhs-size",
     cl::desc("Max size of LHS (in bytes) to put in external cache (default=1024)"),
     cl::init(1024));
 
+class BaseSolver : public Solver {
+
+public:
+  void jubi_foo() {
+    unsigned x = 10;
+  }
+
+};
 
 }
 
+namespace souper {
+
+Solver::~Solver() {}
+
+}
