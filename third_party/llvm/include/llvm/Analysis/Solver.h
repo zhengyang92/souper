@@ -17,13 +17,7 @@
 #include <system_error>
 #include <vector>
 
-namespace souper {
-
-class Solver {
-public:
-  virtual ~Solver();
-
+namespace souper_solver {
   void jubi_foo();
-};
-
 }
+

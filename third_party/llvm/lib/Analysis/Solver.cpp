@@ -6,13 +6,13 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/KnownBits.h"
+#include "llvm/Analysis/Solver.h"
 
 #include <unordered_map>
 
-using namespace souper;
 using namespace llvm;
 
-namespace {
+namespace souper_solver {
 
 static cl::opt<bool> NoInfer("souper-no-infer",
     cl::desc("Populate the external cache, but don't infer replacements (default=false)"),
@@ -39,19 +39,10 @@ static cl::opt<int> MaxLHSSize("souper-max-lhs-size",
     cl::desc("Max size of LHS (in bytes) to put in external cache (default=1024)"),
     cl::init(1024));
 
-class BaseSolver : public Solver {
 
-public:
-  void jubi_foo() {
-    unsigned x = 10;
-  }
-
-};
-
+void jubi_foo() {
+  unsigned x = 10;
 }
 
-namespace souper {
-
-Solver::~Solver() {}
 
 }

@@ -1596,6 +1596,7 @@ KnownBits computeKnownBits(const Value *V, unsigned Depth, const Query &Q) {
 /// for all of the elements in the vector.
 void computeKnownBits(const Value *V, KnownBits &Known, unsigned Depth,
                       const Query &Q) {
+#if 0
   assert(V && "No Value?");
   assert(Depth <= MaxDepth && "Limit Search Depth");
   unsigned BitWidth = Known.getBitWidth();
@@ -1611,7 +1612,6 @@ void computeKnownBits(const Value *V, KnownBits &Known, unsigned Depth,
   (void)BitWidth;
   (void)ExpectedWidth;
 
-  jubi_foo();
   const APInt *C;
   if (match(V, m_APInt(C))) {
     // We know all of the bits for a scalar constant or a splat vector constant!
@@ -1697,6 +1697,8 @@ void computeKnownBits(const Value *V, KnownBits &Known, unsigned Depth,
   computeKnownBitsFromAssume(V, Known, Depth, Q);
 
   assert((Known.Zero & Known.One) == 0 && "Bits known to be one AND zero?");
+#endif
+  souper_solver::jubi_foo();
 }
 
 /// Return true if the given value is known to have exactly one
