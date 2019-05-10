@@ -29,12 +29,14 @@ add_llvm_library(LLVMAnalysis
   DomPrinter.cpp
   DominanceFrontier.cpp
   EHPersonalities.cpp
+  ExprBuilder.cpp
   GlobalsModRef.cpp
   GuardUtils.cpp
   IVDescriptors.cpp
   IVUsers.cpp
   IndirectCallPromotionAnalysis.cpp
   InlineCost.cpp
+  Inst.cpp
   InstCount.cpp
   InstructionPrecedenceTracking.cpp
   InstructionSimplify.cpp
@@ -69,6 +71,7 @@ add_llvm_library(LLVMAnalysis
   OptimizationRemarkEmitter.cpp
   OrderedBasicBlock.cpp
   OrderedInstructions.cpp
+  Parser.cpp
   PHITransAddr.cpp
   PhiValues.cpp
   PostDominators.cpp
@@ -91,6 +94,7 @@ add_llvm_library(LLVMAnalysis
   TypeMetadataUtils.cpp
   ScopedNoAliasAA.cpp
   Solver.cpp
+  SMTLIBSolver.cpp
   ValueLattice.cpp
   ValueLatticeUtils.cpp
   ValueTracking.cpp

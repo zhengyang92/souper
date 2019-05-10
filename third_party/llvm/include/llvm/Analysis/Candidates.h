@@ -21,7 +21,7 @@
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Support/raw_ostream.h"
-#include "souper/Inst/Inst.h"
+#include "llvm/Analysis/Inst.h"
 #include <map>
 #include <memory>
 #include <vector>

@@ -15,8 +15,8 @@
 #ifndef SOUPER_EXTRACTOR_EXPRBUILDER_H
 #define SOUPER_EXTRACTOR_EXPRBUILDER_H
 
-#include "souper/Inst/Inst.h"
-#include "souper/Util/UniqueNameSet.h"
+#include "llvm/Analysis/Inst.h"
+#include "llvm/Analysis/UniqueNameSet.h"
 #include <unordered_map>
 
 namespace souper {

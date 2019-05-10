@@ -16,10 +16,10 @@
 #define SOUPER_TOOL_CANDIDATEMAPUTILS_H
 
 #include "llvm/Support/raw_ostream.h"
-#include "souper/Extractor/Candidates.h"
-#include "souper/Extractor/ExprBuilder.h"
-#include "souper/Extractor/Solver.h"
-#include "souper/KVStore/KVStore.h"
+#include "llvm/Analysis/Candidates.h"
+#include "llvm/Analysis/ExprBuilder.h"
+#include "llvm/Analysis/Solver.h"
+#include "llvm/Analysis/KVStore.h"
 
 namespace llvm {
 

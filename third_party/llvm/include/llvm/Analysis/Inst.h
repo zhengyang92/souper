@@ -21,7 +21,7 @@
 #include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Value.h"
 
-#include "souper/SMTLIB2/Solver.h"
+#include "llvm/Analysis/SMTLIBSolver.h"
 
 #include <map>
 #include <memory>

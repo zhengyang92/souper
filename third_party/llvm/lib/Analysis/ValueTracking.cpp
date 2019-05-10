@@ -13,7 +13,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/Analysis/Solver.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -74,6 +73,13 @@
 #include <cstdint>
 #include <iterator>
 #include <utility>
+
+
+#include "llvm/Analysis/Solver.h"
+#include "llvm/Analysis/Parser.h"
+#include "llvm/Analysis/ConstantSynthesis.h"
+#include "llvm/Analysis/Inst.h"
+#include "llvm/Support/MemoryBuffer.h"
 
 using namespace llvm;
 using namespace llvm::PatternMatch;
@@ -1698,7 +1704,20 @@ void computeKnownBits(const Value *V, KnownBits &Known, unsigned Depth,
 
   assert((Known.Zero & Known.One) == 0 && "Bits known to be one AND zero?");
 #endif
-  souper_solver::jubi_foo();
+//  souper_solver::jubi_foo();
+  souper::InstContext IC;
+  std::vector<souper::ParsedReplacement> Reps;
+  std::string ErrStr;
+  MemoryBufferRef MB;
+  souper::Solver *S;
+  std::vector<souper::ReplacementContext> Contexts;
+  Reps = ParseReplacementLHSs(IC, MB.getBufferIdentifier(), MB.getBuffer(),
+                              Contexts, ErrStr);
+  for (auto &Rep : Reps) {
+    unsigned W = Rep.Mapping.LHS->Width;
+    KnownBits Known(W);
+    S->knownBits(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS, Known, IC);
+  }
 }
 
 /// Return true if the given value is known to have exactly one
