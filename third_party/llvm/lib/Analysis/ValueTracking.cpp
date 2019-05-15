@@ -74,12 +74,18 @@
 #include <iterator>
 #include <utility>
 
-
+#include "llvm/Analysis/Candidates.h"
 #include "llvm/Analysis/Solver.h"
 #include "llvm/Analysis/Parser.h"
 #include "llvm/Analysis/ConstantSynthesis.h"
 #include "llvm/Analysis/Inst.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Analysis/DemandedBits.h"
+#include "llvm/Analysis/LazyValueInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/Pass.h"
+#include "llvm/IR/LegacyPassManager.h"
 
 using namespace llvm;
 using namespace llvm::PatternMatch;
@@ -5452,4 +5458,180 @@ Optional<bool> llvm::isImpliedByDomCondition(const Value *Cond,
   // Is this condition implied by the predecessor condition?
   bool CondIsTrue = TrueBB == ContextBB;
   return isImpliedCondition(PredCond, Cond, DL, CondIsTrue);
+}
+
+bool runOnFunction(Function *F) {
+  bool Changed = false;
+  souper::InstContext IC;
+  souper::ExprBuilderContext EBC;
+  std::map<souper::Inst *, Value *> ReplacedValues;
+  LoopInfo *LI = &getAnalysis<LoopInfoWrapperPass>(*F).getLoopInfo();
+  if (!LI)
+    report_fatal_error("getLoopInfo() failed");
+  auto &DT = getAnalysis<DominatorTreeWrapperPass>(*F).getDomTree();
+  DemandedBits *DB = &getAnalysis<DemandedBitsWrapperPass>(*F).getDemandedBits();
+  if (!DB)
+    report_fatal_error("getDemandedBits() failed");
+  LazyValueInfo *LVI = &getAnalysis<LazyValueInfoWrapperPass>(*F).getLVI();
+  if (!LVI)
+    report_fatal_error("getLVI() failed");
+  ScalarEvolution *SE = &getAnalysis<ScalarEvolutionWrapperPass>(*F).getSE();
+  if (!SE)
+    report_fatal_error("getSE() failed");
+  TargetLibraryInfo* TLI = &getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
+  if (!TLI)
+    report_fatal_error("getTLI() failed");
+  FunctionCandidateSet CS = ExtractCandidatesFromPass(F, LI, DB, LVI, SE, TLI, IC, EBC);
+
+  std::string FunctionName;
+  if (F->hasLocalLinkage()) {
+    FunctionName =
+      (F->getParent()->getModuleIdentifier() + ":" + F->getName()).str();
+  } else {
+    FunctionName = F->getName();
+  }
+
+  if (DebugLevel > 1) {
+    errs() << "\n";
+    errs() << "; Listing all replacements for " << FunctionName << "\n";
+    errs() << "; Using solver: " << S->getName() << '\n';
+  }
+
+  CandidateMap CandMap;
+  for (auto &B : CS.Blocks) {
+    for (auto &R : B->Replacements) {
+      if (DebugLevel > 3) {
+        errs() << "\n; *****";
+        errs() << "\n; For LLVM instruction:\n;";
+        R.Origin->print(errs());
+        errs() << "\n; Generating replacement:\n";
+        ReplacementContext Context;
+        PrintReplacementLHS(errs(), R.BPCs, R.PCs, R.Mapping.LHS, Context);
+      }
+      AddToCandidateMap(CandMap, R);
+    }
+  }
+
+
+  for (auto &Cand : CandMap) {
+
+    if (StaticProfile) {
+      std::string Str;
+      llvm::raw_string_ostream Loc(Str);
+      Cand.Origin->getDebugLoc().print(Loc);
+      std::string HField = "sprofile " + Loc.str();
+      ReplacementContext Context;
+      KV->hIncrBy(GetReplacementLHSString(Cand.BPCs, Cand.PCs,
+                                          Cand.Mapping.LHS,
+                                          Context), HField, 1);
+    }
+    if (DynamicProfileAll) {
+      dynamicProfile(F, Cand);
+      Changed = true;
+      continue;
+    }
+    if (std::error_code EC =
+        S->infer(Cand.BPCs, Cand.PCs, Cand.Mapping.LHS,
+                 Cand.Mapping.RHS, IC)) {
+      if (EC == std::errc::timed_out ||
+          EC == std::errc::value_too_large) {
+        continue;
+      } else {
+        report_fatal_error("Unable to query solver: " + EC.message() + "\n");
+      }
+    }
+    if (!Cand.Mapping.RHS)
+      continue;
+
+    Instruction *I = Cand.Origin;
+    assert(Cand.Mapping.LHS->hasOrigin(I));
+    IRBuilder<> Builder(I);
+
+    Value *NewVal = getValue(Cand.Mapping.RHS, I, EBC, DT,
+                             ReplacedValues, Builder, F->getParent());
+
+    // if LHS comes from use, then NewVal should be a constant
+    assert(Cand.Mapping.LHS->HarvestKind != HarvestType::HarvestedFromUse ||
+           isa<llvm::Constant>(NewVal));
+
+    // TODO can we assert that getValue() succeeds?
+    if (!NewVal) {
+      if (DebugLevel > 1)
+        errs() << "\"\n; replacement failed\n";
+      continue;
+    }
+
+    // here we finally commit to having a viable replacement
+
+    if (ReplacementIdx < FirstReplace || ReplacementIdx > LastReplace) {
+      if (DebugLevel > 1)
+        errs() << "Skipping this replacement (number " << ReplacementIdx << ")\n";
+      if (ReplacementIdx < std::numeric_limits<unsigned>::max())
+        ++ReplacementIdx;
+      continue;
+    }
+    if (ReplacementIdx < std::numeric_limits<unsigned>::max())
+      ++ReplacementIdx;
+    ReplacementsDone++;
+
+    if (Cand.Mapping.LHS->HarvestKind == HarvestType::HarvestedFromDef)
+      ReplacedValues[Cand.Mapping.LHS] = NewVal;
+
+    if (DebugLevel > 1) {
+      if (DebugLevel > 2) {
+        if (DebugLevel > 4) {
+          errs() << "\nModule before replacement:\n";
+          F->getParent()->dump();
+        } else {
+          errs() << "\nFunction before replacement:\n";
+          F->print(errs());
+        }
+      }
+      errs() << "\n";
+      errs() << "; Replacing \"";
+      I->print(errs());
+      errs() << "\"\n; from \"";
+      I->getDebugLoc().print(errs());
+      errs() << "\"\n; with \"";
+      NewVal->print(errs());
+      errs() << "\" in:\n\"";
+      PrintReplacement(errs(), Cand.BPCs, Cand.PCs, Cand.Mapping);
+      errs() << "\"\n; with \"";
+      NewVal->print(errs());
+      errs() << "\"\n";
+    }
+
+    if (DynamicProfile)
+      dynamicProfile(F, Cand);
+
+    if (Cand.Mapping.LHS->HarvestKind == HarvestType::HarvestedFromDef) {
+      I->replaceAllUsesWith(NewVal);
+      Changed = true;
+    } else {
+      for (llvm::Value::use_iterator UI = I->use_begin();
+           UI != I->use_end(); ) {
+        llvm::Use &U = *UI;
+        ++UI;
+        // TODO: Handle general values, not only instructions
+        auto *Usr = dyn_cast<llvm::Instruction>(U.getUser());
+        if (Usr && Usr->getParent() == Cand.Mapping.LHS->HarvestFrom) {
+          U.set(NewVal);
+          Changed = true;
+        }
+      }
+    }
+  }
+
+  if (DebugLevel > 2) {
+    if (DebugLevel > 4) {
+      errs() << "\nModule after replacement:\n";
+      F->getParent()->dump();
+    } else {
+      errs() << "\nFunction after replacement:\n\n";
+      F->print(errs());
+    }
+    errs() << "\n";
+  }
+
+  return Changed;
 }
