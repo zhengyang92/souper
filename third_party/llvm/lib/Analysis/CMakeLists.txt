@@ -9,6 +9,7 @@ add_llvm_library(LLVMAnalysis
   BlockFrequencyInfo.cpp
   BlockFrequencyInfoImpl.cpp
   BranchProbabilityInfo.cpp
+  Candidates.cpp
   CFG.cpp
   CFGPrinter.cpp
   CFLAndersAliasAnalysis.cpp
@@ -94,6 +95,7 @@ add_llvm_library(LLVMAnalysis
   TypeMetadataUtils.cpp
   ScopedNoAliasAA.cpp
   Solver.cpp
+  SouperPass.cpp
   SMTLIBSolver.cpp
   ValueLattice.cpp
   ValueLatticeUtils.cpp
