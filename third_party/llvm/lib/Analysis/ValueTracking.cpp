@@ -76,6 +76,7 @@
 
 #include "llvm/Analysis/Candidates.h"
 #include "llvm/Analysis/Solver.h"
+#include "llvm/Analysis/KVStore.h"
 #include "llvm/Analysis/Parser.h"
 #include "llvm/Analysis/ConstantSynthesis.h"
 #include "llvm/Analysis/Inst.h"
@@ -5465,6 +5466,11 @@ bool runOnFunction(Function *F) {
   souper::InstContext IC;
   souper::ExprBuilderContext EBC;
   std::map<souper::Inst *, Value *> ReplacedValues;
+
+  std::unique_ptr<souper::Solver> S;
+  unsigned ReplacementIdx, ReplacementsDone;
+  KVStore *KV;
+
   LoopInfo *LI = &getAnalysis<LoopInfoWrapperPass>(*F).getLoopInfo();
   if (!LI)
     report_fatal_error("getLoopInfo() failed");
@@ -5490,6 +5496,12 @@ bool runOnFunction(Function *F) {
   } else {
     FunctionName = F->getName();
   }
+
+  S = GetSolverFromArgs(KV);
+  if (StaticProfile && !KV)
+    KV = new KVStore;
+  if (!S)
+    report_fatal_error("Souper requires a solver to be specified");
 
   if (DebugLevel > 1) {
     errs() << "\n";
