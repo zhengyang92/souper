@@ -11,6 +11,7 @@
 // computations have.
 //
 //===----------------------------------------------------------------------===//
+#define DEBUG_TYPE "souper"
 
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Analysis/Passes.h"
