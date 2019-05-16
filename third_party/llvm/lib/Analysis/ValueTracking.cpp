@@ -148,8 +148,6 @@ static unsigned getBitWidth(Type *Ty, const DataLayout &DL) {
   return DL.getIndexTypeSizeInBits(Ty);
 }
 
-CandidateMap CandMap;
-
 namespace {
 
 // Simplifying using an assume can only be done in a particular control-flow
@@ -1757,23 +1755,19 @@ void computeKnownBits(const Value *V, KnownBits &Known, unsigned Depth,
   // Call Souper's function here
   // souper_solver::jubi_foo();
   // get LHS in Souper IR from given LLVM IR
-  runOnFunction((Function *)V);
+  Inst *SouperInst = get(V);
 
-//  std::vector<souper::ParsedReplacement> Reps;
-//  std::string ErrStr;
-//  MemoryBufferRef MB;
-//  std::vector<souper::ReplacementContext> Contexts;
-//  Reps = ParseReplacementLHSs(IC, MB.getBufferIdentifier(), MB.getBuffer(),
-//                              Contexts, ErrStr);
-  souper::InstContext IC;
-  std::unique_ptr<souper::Solver> S;
-  KVStore *KV = 0;
-  S = GetSolverFromArgs(KV);
-  for (auto &Cand : CandMap) {
-    unsigned W = Cand.Mapping.LHS->Width;
-    KnownBits Known(W);
-    S->knownBits(Cand.BPCs, Cand.PCs, Cand.Mapping.LHS, Known, IC);
-  }
+//  souper::InstContext IC;
+//  std::unique_ptr<souper::Solver> S;
+//  KVStore *KV = 0;
+//  S = GetSolverFromArgs(KV);
+//  CandidateMap CandMap;
+//  for (auto &Cand : CandMap) {
+//    unsigned W = Cand.Mapping.LHS->Width;
+//    KnownBits Known(W);
+//    S->knownBits(Cand.BPCs, Cand.PCs, Cand.Mapping.LHS, Known, IC);
+//  }
+
 //  for (auto &Rep : Reps) {
 //    unsigned W = Rep.Mapping.LHS->Width;
 //    KnownBits Known(W);
@@ -5514,7 +5508,7 @@ Optional<bool> llvm::isImpliedByDomCondition(const Value *Cond,
   bool CondIsTrue = TrueBB == ContextBB;
   return isImpliedCondition(PredCond, Cond, DL, CondIsTrue);
 }
-
+#if 0
 Value *getValue(Inst *I, Instruction *ReplacedInst,
                 ExprBuilderContext &EBC, DominatorTree &DT,
                 std::map<Inst *, Value *> &ReplacedValues,
@@ -5748,7 +5742,7 @@ bool runOnFunction(Function *F) {
     errs() << "; Using solver: " << S->getName() << '\n';
   }
 
-//  CandidateMap CandMap; //declared globally
+  CandidateMap CandMap;
   for (auto &B : CS.Blocks) {
     for (auto &R : B->Replacements) {
       if (DebugLevel > 3) {
@@ -5886,3 +5880,4 @@ bool runOnFunction(Function *F) {
 
   return Changed;
 }
+#endif
