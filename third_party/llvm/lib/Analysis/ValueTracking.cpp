@@ -148,6 +148,8 @@ static unsigned getBitWidth(Type *Ty, const DataLayout &DL) {
   return DL.getIndexTypeSizeInBits(Ty);
 }
 
+CandidateMap CandMap;
+
 namespace {
 
 // Simplifying using an assume can only be done in a particular control-flow
@@ -1752,20 +1754,31 @@ void computeKnownBits(const Value *V, KnownBits &Known, unsigned Depth,
 
   assert((Known.Zero & Known.One) == 0 && "Bits known to be one AND zero?");
 #endif
-//  souper_solver::jubi_foo();
+  // Call Souper's function here
+  // souper_solver::jubi_foo();
+  // get LHS in Souper IR from given LLVM IR
+  runOnFunction((Function *)V);
+
+//  std::vector<souper::ParsedReplacement> Reps;
+//  std::string ErrStr;
+//  MemoryBufferRef MB;
+//  std::vector<souper::ReplacementContext> Contexts;
+//  Reps = ParseReplacementLHSs(IC, MB.getBufferIdentifier(), MB.getBuffer(),
+//                              Contexts, ErrStr);
   souper::InstContext IC;
-  std::vector<souper::ParsedReplacement> Reps;
-  std::string ErrStr;
-  MemoryBufferRef MB;
-  souper::Solver *S;
-  std::vector<souper::ReplacementContext> Contexts;
-  Reps = ParseReplacementLHSs(IC, MB.getBufferIdentifier(), MB.getBuffer(),
-                              Contexts, ErrStr);
-  for (auto &Rep : Reps) {
-    unsigned W = Rep.Mapping.LHS->Width;
+  std::unique_ptr<souper::Solver> S;
+  KVStore *KV = 0;
+  S = GetSolverFromArgs(KV);
+  for (auto &Cand : CandMap) {
+    unsigned W = Cand.Mapping.LHS->Width;
     KnownBits Known(W);
-    S->knownBits(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS, Known, IC);
+    S->knownBits(Cand.BPCs, Cand.PCs, Cand.Mapping.LHS, Known, IC);
   }
+//  for (auto &Rep : Reps) {
+//    unsigned W = Rep.Mapping.LHS->Width;
+//    KnownBits Known(W);
+//    S->knownBits(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS, Known, IC);
+//  }
 }
 
 /// Return true if the given value is known to have exactly one
@@ -5735,7 +5748,7 @@ bool runOnFunction(Function *F) {
     errs() << "; Using solver: " << S->getName() << '\n';
   }
 
-  CandidateMap CandMap;
+//  CandidateMap CandMap; //declared globally
   for (auto &B : CS.Blocks) {
     for (auto &R : B->Replacements) {
       if (DebugLevel > 3) {
