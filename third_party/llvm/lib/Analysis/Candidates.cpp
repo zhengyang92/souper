@@ -38,6 +38,7 @@
 #include <unordered_set>
 #include <tuple>
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/Analysis/Cand.h"
 
 static llvm::cl::opt<bool> ExploitBPCs(
     "souper-exploit-blockpcs",
@@ -84,10 +85,11 @@ static llvm::cl::opt<bool> PrintSignBitsAtReturn(
     llvm::cl::desc("Print sign bits dfa in each value returned from a function (default=false)"),
     llvm::cl::init(false));
 
-extern bool UseAlive;
+//extern bool UseAlive;
 
 using namespace llvm;
 using namespace souper;
+using namespace Foo;
 
 void CandidateReplacement::printFunction(llvm::raw_ostream &Out) const {
   assert(Mapping.LHS->hasOrigin(Origin));
@@ -112,47 +114,7 @@ void CandidateReplacement::print(llvm::raw_ostream &Out,
   PrintReplacement(Out, BPCs, PCs, Mapping, printNames);
 }
 
-namespace {
-
-struct ExprBuilder {
-  ExprBuilder(const ExprBuilderOptions &Opts, Module *M, const LoopInfo *LI,
-              DemandedBits *DB, LazyValueInfo *LVI, ScalarEvolution *SE,
-              TargetLibraryInfo * TLI, InstContext &IC,
-              ExprBuilderContext &EBC)
-    : Opts(Opts), DL(M->getDataLayout()), LI(LI), DB(DB), LVI(LVI), SE(SE), TLI(TLI), IC(IC), EBC(EBC) {}
-
-  const ExprBuilderOptions &Opts;
-  const DataLayout &DL;
-  const LoopInfo *LI;
-  DemandedBits *DB;
-  LazyValueInfo *LVI;
-  ScalarEvolution *SE;
-  TargetLibraryInfo *TLI;
-  InstContext &IC;
-  ExprBuilderContext &EBC;
-
-  void checkIrreducibleCFG(BasicBlock *BB,
-                           BasicBlock *FirstBB,
-                           std::unordered_set<const BasicBlock *> &VisitedBBs,
-                           bool &Loop);
-  bool isLoopEntryPoint(PHINode *Phi);
-  Inst *makeArrayRead(Value *V);
-  Inst *buildConstant(Constant *c);
-  Inst *buildGEP(Inst *Ptr, gep_type_iterator begin, gep_type_iterator end);
-  Inst *build(Value *V, APInt DemandedBits);
-  Inst *buildHelper(Value *V);
-  void addPC(BasicBlock *BB, BasicBlock *Pred, std::vector<InstMapping> &PCs);
-  void addPathConditions(BlockPCs &BPCs, std::vector<InstMapping> &PCs,
-                         std::unordered_set<Block *> &VisitedBlocks,
-                         BasicBlock *BB);
-  Inst *get(Value *V, APInt DemandedBits);
-  Inst *get(Value *V);
-  Inst *getFromUse(Value *V);
-  void markExternalUses(Inst *I);
-};
-
-}
-
+namespace Foo {
 // Use DFS to detect a possible loop, most likely an loop in an irreducible
 // CFG. One of the headers of the loop is the FirstBB.
 // Loop is set to true upon successfully detecting such a loop.
@@ -488,9 +450,9 @@ Inst *ExprBuilder::buildHelper(Value *V) {
     // TODO: In principle we could track loop iterations and maybe even maintain
     // a separate set of values for each iteration (as in bounded model
     // checking).
-    if (UseAlive) { // FIXME: Remove this after alive supports phi
-      return makeArrayRead(V);
-    }
+//    if (UseAlive) { // FIXME: Remove this after alive supports phi
+//      return makeArrayRead(V);
+//    }
     if (!isLoopEntryPoint(Phi)) {
       BasicBlock *BB = Phi->getParent();
       BlockInfo &BI = EBC.BlockMap[BB];
@@ -648,6 +610,8 @@ Inst *ExprBuilder::get(Value *V) {
   if (E->K != Inst::Const && !E->hasOrigin(V))
     E->Origins.push_back(V);
   return E;
+}
+
 }
 
 void emplace_back_dedup(std::vector<InstMapping> &PCs, Inst *LHS, Inst *RHS) {

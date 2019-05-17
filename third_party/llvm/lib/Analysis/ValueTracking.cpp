@@ -96,6 +96,7 @@
 #include "llvm/Analysis/GetSolverFromArgs.h"
 #include "llvm/Analysis/CandidateMapUtils.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/Cand.h"
 
 
 STATISTIC(InstructionReplaced, "Number of instructions replaced by another instruction");
@@ -104,6 +105,7 @@ STATISTIC(DominanceCheckFailed, "Number of failed replacement due to dominance c
 using namespace llvm;
 using namespace llvm::PatternMatch;
 using namespace souper;
+using namespace Foo;
 
 const unsigned MaxDepth = 6;
 
@@ -1755,7 +1757,8 @@ void computeKnownBits(const Value *V, KnownBits &Known, unsigned Depth,
   // Call Souper's function here
   // souper_solver::jubi_foo();
   // get LHS in Souper IR from given LLVM IR
-  Inst *SouperInst = get(V);
+  Foo::ExprBuilder *EB = new Foo::ExprBuilder;
+  Inst *SouperInst = EB->get(const_cast<llvm::Value*>(V));
 
 //  souper::InstContext IC;
 //  std::unique_ptr<souper::Solver> S;
