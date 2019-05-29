@@ -32,7 +32,6 @@ using namespace souper;
 namespace Foo {
 
 struct ExprBuilder {
-  ExprBuilder();
   ExprBuilder(const ExprBuilderOptions &Opts, Module *M, const LoopInfo *LI,
               DemandedBits *DB, LazyValueInfo *LVI, ScalarEvolution *SE,
               TargetLibraryInfo * TLI, InstContext &IC,

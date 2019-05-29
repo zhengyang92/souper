@@ -1757,8 +1757,20 @@ void computeKnownBits(const Value *V, KnownBits &Known, unsigned Depth,
   // Call Souper's function here
   // souper_solver::jubi_foo();
   // get LHS in Souper IR from given LLVM IR
-  Foo::ExprBuilder *EB = new Foo::ExprBuilder;
-  Inst *SouperInst = EB->get(const_cast<llvm::Value*>(V));
+  ExprBuilderOptions EBO;
+  Module *M;
+  LoopInfo *LI;
+  DemandedBits *DB;
+  LazyValueInfo *LVI;
+  ScalarEvolution *SE;
+  TargetLibraryInfo *TLI;
+  InstContext IC;
+  ExprBuilderContext EBC;
+
+//  Foo::ExprBuilder EB(&EBO, M, LI, DB, LVI, SE, TLI, &IC, &EBC);
+  Inst *SouperInst = Foo::get(const_cast<llvm::Value*>(V));
+//  Foo::ExprBuilder *EB = new Foo::ExprBuilder;
+//  Inst *SouperInst = EB->get(const_cast<llvm::Value*>(V));
 
 //  souper::InstContext IC;
 //  std::unique_ptr<souper::Solver> S;
