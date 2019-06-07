@@ -1767,8 +1767,12 @@ void computeKnownBits(const Value *V, KnownBits &Known, unsigned Depth,
   InstContext IC;
   ExprBuilderContext EBC;
 
+
+  Foo::ExprBuilder EB(EBO, 0, 0, 0, 0, 0,0, IC, EBC);
+  Inst *SouperInst = EB.get(const_cast<llvm::Value*>(V));
 //  Foo::ExprBuilder EB(&EBO, M, LI, DB, LVI, SE, TLI, &IC, &EBC);
-  Inst *SouperInst = Foo::get(const_cast<llvm::Value*>(V));
+//  Inst *SouperInst = Foo::ExprBuilder::get(const_cast<llvm::Value*>(V));
+
 //  Foo::ExprBuilder *EB = new Foo::ExprBuilder;
 //  Inst *SouperInst = EB->get(const_cast<llvm::Value*>(V));
 
