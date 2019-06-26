@@ -18,8 +18,11 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Analysis/DemandedBits.h"
 #include "llvm/Analysis/LazyValueInfo.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/Support/raw_ostream.h"
 #include "souper/Inst/Inst.h"
 #include <map>
@@ -109,6 +112,46 @@ FunctionCandidateSet ExtractCandidates(
     llvm::Function *F, InstContext &IC, ExprBuilderContext &EBC,
     const ExprBuilderOptions &Opts = ExprBuilderOptions());
 
+struct ExprBuilderS {
+  ExprBuilderS(const ExprBuilderOptions &Opts, llvm::Module *M, const llvm::LoopInfo *LI,
+               llvm::DemandedBits *DB, llvm::LazyValueInfo *LVI, llvm::ScalarEvolution *SE,
+               llvm::TargetLibraryInfo * TLI, InstContext &IC,
+               ExprBuilderContext &EBC)
+    : Opts(Opts), DL(M->getDataLayout()), LI(LI), DB(DB), LVI(LVI), SE(SE), TLI(TLI), IC(IC), EBC(EBC) {}
+
+  const ExprBuilderOptions &Opts;
+  const llvm::DataLayout &DL;
+  const llvm::LoopInfo *LI;
+  llvm::DemandedBits *DB;
+  llvm::LazyValueInfo *LVI;
+  llvm::ScalarEvolution *SE;
+  llvm::TargetLibraryInfo *TLI;
+  InstContext &IC;
+  ExprBuilderContext &EBC;
+
+  void checkIrreducibleCFG(llvm::BasicBlock *BB,
+                           llvm::BasicBlock *FirstBB,
+                           std::unordered_set<const llvm::BasicBlock *> &VisitedBBs,
+                           bool &Loop);
+  bool isLoopEntryPoint(llvm::PHINode *Phi);
+  Inst *makeArrayRead(llvm::Value *V);
+  Inst *buildConstant(llvm::Constant *c);
+  Inst *buildGEP(Inst *Ptr, llvm::gep_type_iterator begin, llvm::gep_type_iterator end);
+  Inst *build(llvm::Value *V, llvm::APInt DemandedBits);
+  Inst *buildHelper(llvm::Value *V);
+  void addPC(llvm::BasicBlock *BB, llvm::BasicBlock *Pred, std::vector<InstMapping> &PCs);
+  void addPathConditions(BlockPCs &BPCs, std::vector<InstMapping> &PCs,
+                         std::unordered_set<Block *> &VisitedBlocks,
+                         llvm::BasicBlock *BB);
+  Inst *get(llvm::Value *V, llvm::APInt DemandedBits);
+  Inst *get(llvm::Value *V);
+  Inst *getFromUse(llvm::Value *V);
+  void markExternalUses(Inst *I);
+};
+
+
 }
+
+
 
 #endif  // SOUPER_EXTRACTOR_CANDIDATES_H
