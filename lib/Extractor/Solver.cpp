@@ -24,7 +24,7 @@
 #include "souper/Extractor/Solver.h"
 #include "souper/Infer/AliveDriver.h"
 #include "souper/Infer/ConstantSynthesis.h"
-#include "souper/Infer/ExhaustiveSynthesis.h"
+//#include "souper/Infer/ExhaustiveSynthesis.h"
 #include "souper/Infer/InstSynthesis.h"
 #include "souper/KVStore/KVStore.h"
 #include "souper/Parser/Parser.h"
@@ -255,7 +255,7 @@ public:
       for (auto I : Guesses) {
         InstMapping Mapping(LHS, I);
 
-        if (UseAlive) {
+        /*        if (UseAlive) {
           bool IsValid = isTransformationValid(Mapping.LHS, Mapping.RHS,
                                                PCs, IC);
           if (IsValid) {
@@ -263,7 +263,7 @@ public:
             return std::error_code();
           }
           // TODO: Propagate errors from Alive backend, exit early for errors
-        } else {
+          } else*/ {
           std::string Query = BuildQuery(IC, BPCs, PCs, Mapping, 0, /*Precondition=*/0);
           if (Query.empty())
             return std::make_error_code(std::errc::value_too_large);
@@ -282,7 +282,7 @@ public:
     if (InferInts && SMTSolver->supportsModels() && LHS->Width > 1) {
       Inst *C = IC.createSynthesisConstant(LHS->Width, /*SynthesisConstID=*/1);
 
-      if (UseAlive) {
+      /*if (UseAlive) {
         Inst *Ante = IC.getConst(llvm::APInt(1, true));
         for (auto PC : PCs ) {
           Inst *Eq = IC.getInst(Inst::Eq, 1, {PC.LHS, PC.RHS});
@@ -296,7 +296,7 @@ public:
           return std::error_code();
         }
         // TODO: Propagate errors from Alive backend, exit early for errors
-      } else {
+        } else */{
         std::map<Inst *, llvm::APInt> ResultMap;
         std::set<Inst*> ConstSet{C};
         ConstantSynthesis CS;
@@ -378,12 +378,12 @@ public:
     }
 
     if(SMTSolver->supportsModels()) {
-      if (EnableExhaustiveSynthesis) {
+      /*      if (EnableExhaustiveSynthesis) {
         ExhaustiveSynthesis ES;
         EC = ES.synthesize(SMTSolver.get(), BPCs, PCs, LHS, RHS, IC, Timeout);
         if (EC || RHS)
           return EC;
-      } else if (InferInsts) {
+          } else*/ if (InferInsts) {
         InstSynthesis IS;
         EC = IS.synthesize(SMTSolver.get(), BPCs, PCs, LHS, RHS, IC, Timeout);
         if (EC || RHS)
@@ -400,10 +400,11 @@ public:
                           InstMapping Mapping, bool &IsValid,
                           std::vector<std::pair<Inst *, llvm::APInt>> *Model)
   override {
+    /*
     if (UseAlive) {
       IsValid = isTransformationValid(Mapping.LHS, Mapping.RHS, PCs, IC);
       return std::error_code();
-    }
+      }*/
     std::string Query;
     if (Model && SMTSolver->supportsModels()) {
       std::vector<Inst *> ModelInsts;

@@ -29,7 +29,7 @@ static const unsigned MaxLHSCands = 15;
 
 bool UseAlive;
 unsigned DebugLevel;
-
+#if (false)
 using namespace souper;
 using namespace llvm;
 
@@ -931,3 +931,4 @@ ExhaustiveSynthesis::synthesize(SMTLIBSolver *SMTSolver,
 
   return EC;
 }
+#endif

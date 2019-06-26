@@ -997,6 +997,7 @@ FunctionCandidateSet souper::ExtractCandidatesFromPass(
   return Result;
 }
 
+/*
 FunctionCandidateSet souper::ExtractCandidates(Function *F, InstContext &IC,
                                                ExprBuilderContext &EBC,
                                                const ExprBuilderOptions &Opts) {
@@ -1011,3 +1012,4 @@ FunctionCandidateSet souper::ExtractCandidates(Function *F, InstContext &IC,
 
   return Result;
 }
+*/

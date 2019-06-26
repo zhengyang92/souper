@@ -30,7 +30,7 @@ void souper::AddToCandidateMap(CandidateMap &M,
                                const CandidateReplacement &CR) {
   M.emplace_back(CR);
 }
-
+/*
 void souper::AddModuleToCandidateMap(InstContext &IC, ExprBuilderContext &EBC,
                                      CandidateMap &CandMap, llvm::Module *M) {
   for (auto &F : *M) {
@@ -41,7 +41,7 @@ void souper::AddModuleToCandidateMap(InstContext &IC, ExprBuilderContext &EBC,
       }
     }
   }
-}
+  }*/
 
 namespace souper {
 

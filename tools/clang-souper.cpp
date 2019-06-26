@@ -38,6 +38,7 @@ using namespace souper;
 static cl::OptionCategory ClangSouperCategory("clang-souper options");
 
 int main(int argc, const char **argv) {
+#if (false)
   llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
   CommonOptionsParser OptionsParser(argc, argv, ClangSouperCategory);
   ClangTool Tool(OptionsParser.getCompilations(),
@@ -54,4 +55,6 @@ int main(int argc, const char **argv) {
   KVStore *KV = 0;
   std::unique_ptr<Solver> S = GetSolverFromArgs(KV);
   return SolveCandidateMap(llvm::outs(), CandMap, S.get(), IC, 0) ? 0 : 1;
+  #endif
+  return 0;
 }

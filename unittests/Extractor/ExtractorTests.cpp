@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if (false)
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -308,3 +309,4 @@ cand %2 1:i1
 cand %3 1:i1
 )c"));
 }
+#endif

@@ -80,6 +80,7 @@ static std::unique_ptr<Module> openInputFile(LLVMContext &Context) {
 }
 
 int main(int argc, char **argv) {
+  /*
   sys::PrintStackTraceOnErrorSignal(argv[0]);
   llvm::PrettyStackTraceProgram X(argc, argv);
 
@@ -125,4 +126,6 @@ int main(int argc, char **argv) {
     return SolveCandidateMap(llvm::outs(), CandMap, S.get(), IC,
                              StaticProfile ? KV : 0) ? 0 : 1;
   }
+  */
+  return 0;
 }

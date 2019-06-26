@@ -23,6 +23,7 @@
 #include <string_view>
 #include <z3.h>
 
+#if (false)
 extern unsigned DebugLevel;
 static const int MaxTries = 30;
 
@@ -30,7 +31,7 @@ bool startsWith(const std::string &pre, const std::string &str) {
   return std::equal(pre.begin(), pre.end(), str.begin());
 }
 
-namespace {
+nnamespace {
 class FunctionBuilder {
 public:
   FunctionBuilder(IR::Function &F_) : F(F_) {}
@@ -685,3 +686,4 @@ bool souper::isCandidateInfeasible(souper::Inst* RHS, souper::ValueCache& C,
 
   return !Pruner.verify(RHS, RHSAssume);
 }
+#endif
