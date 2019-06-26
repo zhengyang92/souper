@@ -35,6 +35,7 @@ using namespace clang::tooling;
 using namespace llvm;
 using namespace souper;
 
+#if (false)
 static cl::OptionCategory ClangSouperCategory("clang-souper options");
 
 int main(int argc, const char **argv) {
@@ -55,3 +56,5 @@ int main(int argc, const char **argv) {
   std::unique_ptr<Solver> S = GetSolverFromArgs(KV);
   return SolveCandidateMap(llvm::outs(), CandMap, S.get(), IC, 0) ? 0 : 1;
 }
+#endif
+int main() {return 0;}

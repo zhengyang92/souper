@@ -21,7 +21,6 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
@@ -112,51 +111,10 @@ void CandidateReplacement::print(llvm::raw_ostream &Out,
   PrintReplacement(Out, BPCs, PCs, Mapping, printNames);
 }
 
-namespace {
-
-struct ExprBuilder {
-  ExprBuilder(const ExprBuilderOptions &Opts, Module *M, const LoopInfo *LI,
-              DemandedBits *DB, LazyValueInfo *LVI, ScalarEvolution *SE,
-              TargetLibraryInfo * TLI, InstContext &IC,
-              ExprBuilderContext &EBC)
-    : Opts(Opts), DL(M->getDataLayout()), LI(LI), DB(DB), LVI(LVI), SE(SE), TLI(TLI), IC(IC), EBC(EBC) {}
-
-  const ExprBuilderOptions &Opts;
-  const DataLayout &DL;
-  const LoopInfo *LI;
-  DemandedBits *DB;
-  LazyValueInfo *LVI;
-  ScalarEvolution *SE;
-  TargetLibraryInfo *TLI;
-  InstContext &IC;
-  ExprBuilderContext &EBC;
-
-  void checkIrreducibleCFG(BasicBlock *BB,
-                           BasicBlock *FirstBB,
-                           std::unordered_set<const BasicBlock *> &VisitedBBs,
-                           bool &Loop);
-  bool isLoopEntryPoint(PHINode *Phi);
-  Inst *makeArrayRead(Value *V);
-  Inst *buildConstant(Constant *c);
-  Inst *buildGEP(Inst *Ptr, gep_type_iterator begin, gep_type_iterator end);
-  Inst *build(Value *V, APInt DemandedBits);
-  Inst *buildHelper(Value *V);
-  void addPC(BasicBlock *BB, BasicBlock *Pred, std::vector<InstMapping> &PCs);
-  void addPathConditions(BlockPCs &BPCs, std::vector<InstMapping> &PCs,
-                         std::unordered_set<Block *> &VisitedBlocks,
-                         BasicBlock *BB);
-  Inst *get(Value *V, APInt DemandedBits);
-  Inst *get(Value *V);
-  Inst *getFromUse(Value *V);
-  void markExternalUses(Inst *I);
-};
-
-}
-
 // Use DFS to detect a possible loop, most likely an loop in an irreducible
 // CFG. One of the headers of the loop is the FirstBB.
 // Loop is set to true upon successfully detecting such a loop.
-void ExprBuilder::checkIrreducibleCFG(BasicBlock *BB,
+void ExprBuilderS::checkIrreducibleCFG(BasicBlock *BB,
                     BasicBlock *FirstBB,
                     std::unordered_set<const BasicBlock *> &VisitedBBs,
                     bool &Loop) {
@@ -181,7 +139,7 @@ void ExprBuilder::checkIrreducibleCFG(BasicBlock *BB,
 // Return true if the Basic Block containing the passed Phi node is
 // a loop entry point, either the loop header for a natural loop or
 // a entry point for an irreducible CFG.
-bool ExprBuilder::isLoopEntryPoint(PHINode *Phi) {
+bool ExprBuilderS::isLoopEntryPoint(PHINode *Phi) {
   BasicBlock *BB = Phi->getParent();
   // If LLVM can determine if BB is a loop header, simply return true.
   // Presumably, this should handle structured loops.
@@ -196,7 +154,7 @@ bool ExprBuilder::isLoopEntryPoint(PHINode *Phi) {
   return Loop;
 }
 
-Inst *ExprBuilder::makeArrayRead(Value *V) {
+Inst *ExprBuilderS::makeArrayRead(Value *V) {
   StringRef Name;
   if (Opts.NamedArrays)
     Name = V->getName();
@@ -235,7 +193,7 @@ Inst *ExprBuilder::makeArrayRead(Value *V) {
                       PowOfTwo, Negative, NumSignBits, 0);
 }
 
-Inst *ExprBuilder::buildConstant(Constant *c) {
+Inst *ExprBuilderS::buildConstant(Constant *c) {
   if (auto ci = dyn_cast<ConstantInt>(c)) {
     return IC.getConst(ci->getValue());
   } else if (auto cf = dyn_cast<ConstantFP>(c)) {
@@ -249,7 +207,7 @@ Inst *ExprBuilder::buildConstant(Constant *c) {
   }
 }
 
-Inst *ExprBuilder::buildGEP(Inst *Ptr, gep_type_iterator begin,
+Inst *ExprBuilderS::buildGEP(Inst *Ptr, gep_type_iterator begin,
                             gep_type_iterator end) {
   unsigned PSize = DL.getPointerSizeInBits();
   for (auto i = begin; i != end; ++i) {
@@ -277,7 +235,7 @@ Inst *ExprBuilder::buildGEP(Inst *Ptr, gep_type_iterator begin,
   return Ptr;
 }
 
-void ExprBuilder::markExternalUses (Inst *I) {
+void ExprBuilderS::markExternalUses (Inst *I) {
   std::map<Inst *, unsigned> UsesCount;
   std::unordered_set<Inst *> Visited;
   std::vector<Inst *> Stack;
@@ -306,13 +264,13 @@ void ExprBuilder::markExternalUses (Inst *I) {
         I->DepsWithExternalUses.insert(U.first);
 }
 
-Inst *ExprBuilder::build(Value *V, APInt DemandedBits) {
+Inst *ExprBuilderS::build(Value *V, APInt DemandedBits) {
   Inst *I = buildHelper(V);
   I->DemandedBits = DemandedBits;
   return I;
 }
 
-Inst *ExprBuilder::buildHelper(Value *V) {
+Inst *ExprBuilderS::buildHelper(Value *V) {
   if (auto C = dyn_cast<Constant>(V)) {
     return buildConstant(C);
   } else if (auto ICI = dyn_cast<ICmpInst>(V)) {
@@ -617,7 +575,7 @@ Inst *ExprBuilder::buildHelper(Value *V) {
   return makeArrayRead(V);
 }
 
-Inst *ExprBuilder::get(Value *V, APInt DemandedBits) {
+Inst *ExprBuilderS::get(Value *V, APInt DemandedBits) {
   // Cache V if V is not found in InstMap
   Inst *&E = EBC.InstMap[V];
   if (!E)
@@ -627,7 +585,7 @@ Inst *ExprBuilder::get(Value *V, APInt DemandedBits) {
   return E;
 }
 
-Inst *ExprBuilder::getFromUse(Value *V) {
+Inst *ExprBuilderS::getFromUse(Value *V) {
   // Do not find from cache
   unsigned Width = DL.getTypeSizeInBits(V->getType());
   APInt DemandedBits = APInt::getAllOnesValue(Width);
@@ -637,7 +595,7 @@ Inst *ExprBuilder::getFromUse(Value *V) {
   return E;
 }
 
-Inst *ExprBuilder::get(Value *V) {
+Inst *ExprBuilderS::get(Value *V) {
   // Cache V if V is not found in InstMap
   Inst *&E = EBC.InstMap[V];
   if (!E) {
@@ -657,7 +615,7 @@ void emplace_back_dedup(std::vector<InstMapping> &PCs, Inst *LHS, Inst *RHS) {
   PCs.emplace_back(LHS, RHS);
 }
 
-void ExprBuilder::addPC(BasicBlock *BB, BasicBlock *Pred,
+void ExprBuilderS::addPC(BasicBlock *BB, BasicBlock *Pred,
                         std::vector<InstMapping> &PCs) {
   if (auto Branch = dyn_cast<BranchInst>(Pred->getTerminator())) {
     if (Branch->isConditional()) {
@@ -734,7 +692,7 @@ void ExprBuilder::addPC(BasicBlock *BB, BasicBlock *Pred,
 // blockpc %B9, 1, s4, r4 // B6 -> B8
 // ...
 // cand %i, 1
-void ExprBuilder::addPathConditions(BlockPCs &BPCs,
+void ExprBuilderS::addPathConditions(BlockPCs &BPCs,
                                     std::vector<InstMapping> &PCs,
                                     std::unordered_set<Block *> &VisitedBlocks,
                                     BasicBlock *BB) {
@@ -866,7 +824,7 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
                            const ExprBuilderOptions &Opts, InstContext &IC,
                            ExprBuilderContext &EBC,
                            FunctionCandidateSet &Result) {
-  ExprBuilder EB(Opts, F.getParent(), LI, DB, LVI, SE, TLI, IC, EBC);
+  ExprBuilderS EB(Opts, F.getParent(), LI, DB, LVI, SE, TLI, IC, EBC);
 
   for (auto &BB : F) {
     std::unique_ptr<BlockCandidateSet> BCS(new BlockCandidateSet);
@@ -1039,6 +997,7 @@ FunctionCandidateSet souper::ExtractCandidatesFromPass(
   return Result;
 }
 
+/*
 FunctionCandidateSet souper::ExtractCandidates(Function *F, InstContext &IC,
                                                ExprBuilderContext &EBC,
                                                const ExprBuilderOptions &Opts) {
@@ -1052,4 +1011,4 @@ FunctionCandidateSet souper::ExtractCandidates(Function *F, InstContext &IC,
   FPM.run(*F);
 
   return Result;
-}
+  }*/

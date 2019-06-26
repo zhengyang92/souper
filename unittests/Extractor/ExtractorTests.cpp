@@ -21,6 +21,7 @@
 #include <memory>
 #include "gtest/gtest.h"
 
+#if (false)
 using namespace llvm;
 using namespace souper;
 
@@ -308,3 +309,4 @@ cand %2 1:i1
 cand %3 1:i1
 )c"));
 }
+#endif

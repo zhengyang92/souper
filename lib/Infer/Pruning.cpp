@@ -11,12 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 #include "souper/Infer/AbstractInterpreter.h"
 #include "souper/Infer/Pruning.h"
 
 #include <cstdlib>
-
+#if (false)
 namespace souper {
 
 std::string getUniqueName() {
@@ -410,3 +409,4 @@ std::vector<ValueCache> PruningManager::generateInputSets(
 }
 
 }
+#endif

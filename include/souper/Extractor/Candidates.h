@@ -20,6 +20,7 @@
 #include "llvm/Analysis/LazyValueInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/Support/raw_ostream.h"
 #include "souper/Inst/Inst.h"
 #include <map>
@@ -108,6 +109,51 @@ FunctionCandidateSet ExtractCandidatesFromPass(
 FunctionCandidateSet ExtractCandidates(
     llvm::Function *F, InstContext &IC, ExprBuilderContext &EBC,
     const ExprBuilderOptions &Opts = ExprBuilderOptions());
+
+using namespace llvm;
+struct ExprBuilderS {
+  ExprBuilderS(const ExprBuilderOptions &Opts, Module *M, const LoopInfo *LI,
+              DemandedBits *DB, LazyValueInfo *LVI, ScalarEvolution *SE,
+              TargetLibraryInfo * TLI, InstContext &IC,
+              ExprBuilderContext &EBC)
+    : Opts(Opts), DL(M->getDataLayout()), LI(LI), DB(DB), LVI(LVI), SE(SE), TLI(TLI), IC(IC), EBC(EBC) {}
+
+  ExprBuilderS(const ExprBuilderOptions &Opts, const DataLayout &DL, const LoopInfo *LI,
+              DemandedBits *DB, LazyValueInfo *LVI, ScalarEvolution *SE,
+              TargetLibraryInfo * TLI, InstContext &IC,
+              ExprBuilderContext &EBC)
+    : Opts(Opts), DL(DL), LI(LI), DB(DB), LVI(LVI), SE(SE), TLI(TLI), IC(IC), EBC(EBC) {}
+
+
+  const ExprBuilderOptions &Opts;
+  const DataLayout &DL;
+  const LoopInfo *LI;
+  DemandedBits *DB;
+  LazyValueInfo *LVI;
+  ScalarEvolution *SE;
+  TargetLibraryInfo *TLI;
+  InstContext &IC;
+  ExprBuilderContext &EBC;
+
+  void checkIrreducibleCFG(BasicBlock *BB,
+                           BasicBlock *FirstBB,
+                           std::unordered_set<const BasicBlock *> &VisitedBBs,
+                           bool &Loop);
+  bool isLoopEntryPoint(PHINode *Phi);
+  Inst *makeArrayRead(Value *V);
+  Inst *buildConstant(Constant *c);
+  Inst *buildGEP(Inst *Ptr, gep_type_iterator begin, gep_type_iterator end);
+  Inst *build(Value *V, APInt DemandedBits);
+  Inst *buildHelper(Value *V);
+  void addPC(BasicBlock *BB, BasicBlock *Pred, std::vector<InstMapping> &PCs);
+  void addPathConditions(BlockPCs &BPCs, std::vector<InstMapping> &PCs,
+                         std::unordered_set<Block *> &VisitedBlocks,
+                         BasicBlock *BB);
+  Inst *get(Value *V, APInt DemandedBits);
+  Inst *get(Value *V);
+  Inst *getFromUse(Value *V);
+  void markExternalUses(Inst *I);
+};
 
 }
 

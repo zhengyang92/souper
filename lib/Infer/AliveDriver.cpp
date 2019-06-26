@@ -22,7 +22,7 @@
 #include <sstream>
 #include <string_view>
 #include <z3.h>
-
+#if (false)
 extern unsigned DebugLevel;
 static const int MaxTries = 30;
 
@@ -685,3 +685,4 @@ bool souper::isCandidateInfeasible(souper::Inst* RHS, souper::ValueCache& C,
 
   return !Pruner.verify(RHS, RHSAssume);
 }
+#endif

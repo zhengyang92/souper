@@ -24,6 +24,7 @@
 #include "souper/KVStore/KVStore.h"
 #include "souper/SMTLIB2/Solver.h"
 
+#if (false)
 using namespace llvm;
 
 void souper::AddToCandidateMap(CandidateMap &M,
@@ -203,3 +204,5 @@ bool CheckCandidateMap(llvm::Module &Mod, CandidateMap &M, Solver *S,
 }
 
 }
+
+#endif

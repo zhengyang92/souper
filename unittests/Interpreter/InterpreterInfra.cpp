@@ -17,7 +17,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "souper/Infer/Interpreter.h"
 #include "souper/Infer/AbstractInterpreter.h"
-
+#if (false)
 using namespace souper;
 using namespace llvm;
 
@@ -525,3 +525,4 @@ bool CRTesting::testFn(Inst::Kind pred) {
 
   return true;
 }
+#endif

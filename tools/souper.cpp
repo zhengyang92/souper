@@ -30,6 +30,7 @@
 #include "souper/Tool/GetSolverFromArgs.h"
 #include <iostream>
 
+#if (false)
 using namespace llvm;
 using namespace souper;
 
@@ -126,3 +127,5 @@ int main(int argc, char **argv) {
                              StaticProfile ? KV : 0) ? 0 : 1;
   }
 }
+#endif
+int main() {return 0;}

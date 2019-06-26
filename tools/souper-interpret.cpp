@@ -22,7 +22,7 @@
 
 using namespace llvm;
 using namespace souper;
-
+#if (false)
 static cl::list<std::string>
 InputValueStrings("input-values", cl::desc("<input values>"),
                   cl::CommaSeparated);
@@ -236,3 +236,6 @@ int main(int argc, char **argv) {
   }
   return Interpret((*MB)->getMemBufferRef(), S.get());
 }
+#endif
+
+int main() {return 0;}

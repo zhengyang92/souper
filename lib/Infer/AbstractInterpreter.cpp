@@ -16,6 +16,7 @@
 #include "souper/Infer/Interpreter.h"
 #include "souper/Infer/AbstractInterpreter.h"
 
+#if (false)
 using namespace llvm;
 
 namespace {
@@ -903,3 +904,4 @@ namespace souper {
     return Result;
   }
 }
+#endif
