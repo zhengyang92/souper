@@ -324,6 +324,7 @@ SolverProgram souper::makeExternalSolverProgram(StringRef Path) {
   };
 }
 
+#if (false)
 SolverProgram souper::makeInternalSolverProgram(int MainPtr(int argc,
                                                             char **argv)) {
   return [MainPtr](const std::vector<std::string> &Args, StringRef RedirectIn,
@@ -370,6 +371,7 @@ SolverProgram souper::makeInternalSolverProgram(int MainPtr(int argc,
     }
   };
 }
+#endif
 
 std::unique_ptr<SMTLIBSolver> souper::createBoolectorSolver(SolverProgram Prog,
                                                             bool Keep) {

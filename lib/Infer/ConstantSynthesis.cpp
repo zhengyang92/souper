@@ -18,7 +18,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "souper/Infer/ConstantSynthesis.h"
 
-extern unsigned DebugLevel;
+static unsigned DebugLevel = 0;
 
 namespace souper {
 

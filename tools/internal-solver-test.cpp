@@ -18,6 +18,7 @@
 
 using namespace souper;
 
+#if (false)
 int solver_main(int argc, char **argv) {
   sleep(10);
   puts("sat");
@@ -34,5 +35,9 @@ int main() {
     return 1;
   }
   llvm::outs() << (Sat ? "sat\n" : "unsat\n");
+  return 0;
+}
+#endif
+int main() {
   return 0;
 }

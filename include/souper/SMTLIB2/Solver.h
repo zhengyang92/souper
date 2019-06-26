@@ -41,7 +41,7 @@ public:
 };
 
 SolverProgram makeExternalSolverProgram(llvm::StringRef Path);
-SolverProgram makeInternalSolverProgram(int MainPtr(int argc, char **argv));
+//SolverProgram makeInternalSolverProgram(int MainPtr(int argc, char **argv));
 
 std::unique_ptr<SMTLIBSolver> createBoolectorSolver(SolverProgram Prog,
                                                     bool Keep);

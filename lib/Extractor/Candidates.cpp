@@ -162,6 +162,8 @@ Inst *ExprBuilderS::makeArrayRead(Value *V) {
   KnownBits Known(Width);
   bool NonZero = false, NonNegative = false, PowOfTwo = false, Negative = false;
   unsigned NumSignBits = 1;
+  ConstantRange Range = llvm::ConstantRange(Width, /*isFullSet=*/true);
+#if (false)
   if (HarvestDataFlowFacts)
     if (V->getType()->isIntOrIntVectorTy(Width) ||
         V->getType()->isPtrOrPtrVectorTy()) {
@@ -180,15 +182,15 @@ Inst *ExprBuilderS::makeArrayRead(Value *V) {
         // with this approach, we might be restricting the constant
         // range harvesting. Because range info. might be coming from
         // llvm values other than instruction.
-        BasicBlock *BB = I->getParent();
-        auto LVIRange = LVI->getConstantRange(V, BB);
-        auto SC = SE->getSCEV(V);
-        auto R1 = LVIRange.intersectWith(SE->getSignedRange(SC));
-        auto R2 = LVIRange.intersectWith(SE->getUnsignedRange(SC));
-        Range = R1.getSetSize().ult(R2.getSetSize()) ? R1 : R2;
+        //        BasicBlock *BB = I->getParent();
+        //        auto LVIRange = LVI->getConstantRange(V, BB);
+        //        auto SC = SE->getSCEV(V);
+        //        auto R1 = LVIRange.intersectWith(SE->getSignedRange(SC));
+        //        auto R2 = LVIRange.intersectWith(SE->getUnsignedRange(SC));
+        //Range = R1.getSetSize().ult(R2.getSetSize()) ? R1 : R2;
       }
     }
-
+#endif
   return IC.createVar(Width, Name, Range, Known.Zero, Known.One, NonZero, NonNegative,
                       PowOfTwo, Negative, NumSignBits, 0);
 }
@@ -207,6 +209,7 @@ Inst *ExprBuilderS::buildConstant(Constant *c) {
   }
 }
 
+#if (false)
 Inst *ExprBuilderS::buildGEP(Inst *Ptr, gep_type_iterator begin,
                             gep_type_iterator end) {
   unsigned PSize = DL.getPointerSizeInBits();
@@ -234,6 +237,7 @@ Inst *ExprBuilderS::buildGEP(Inst *Ptr, gep_type_iterator begin,
   }
   return Ptr;
 }
+#endif
 
 void ExprBuilderS::markExternalUses (Inst *I) {
   std::map<Inst *, unsigned> UsesCount;
@@ -446,6 +450,8 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
     // TODO: In principle we could track loop iterations and maybe even maintain
     // a separate set of values for each iteration (as in bounded model
     // checking).
+    //FIXME
+    return makeArrayRead(V);
     if (UseAlive) { // FIXME: Remove this after alive supports phi
       return makeArrayRead(V);
     }

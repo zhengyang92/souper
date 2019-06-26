@@ -119,6 +119,12 @@ struct ExprBuilderS {
                ExprBuilderContext &EBC)
     : Opts(Opts), DL(M->getDataLayout()), LI(LI), DB(DB), LVI(LVI), SE(SE), TLI(TLI), IC(IC), EBC(EBC) {}
 
+  ExprBuilderS(const ExprBuilderOptions &Opts, const llvm::DataLayout &DL, const llvm::LoopInfo *LI,
+               llvm::DemandedBits *DB, llvm::LazyValueInfo *LVI, llvm::ScalarEvolution *SE,
+               llvm::TargetLibraryInfo * TLI, InstContext &IC,
+               ExprBuilderContext &EBC)
+    : Opts(Opts), DL(DL), DB(DB), LVI(LVI), SE(SE), TLI(TLI), IC(IC), EBC(EBC) {}
+
   const ExprBuilderOptions &Opts;
   const llvm::DataLayout &DL;
   const llvm::LoopInfo *LI;
