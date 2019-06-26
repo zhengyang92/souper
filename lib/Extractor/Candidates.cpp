@@ -162,6 +162,8 @@ Inst *ExprBuilderS::makeArrayRead(Value *V) {
   KnownBits Known(Width);
   bool NonZero = false, NonNegative = false, PowOfTwo = false, Negative = false;
   unsigned NumSignBits = 1;
+  ConstantRange Range = llvm::ConstantRange(Width, /*isFullSet=*/true);
+#if (false)
   if (HarvestDataFlowFacts)
     if (V->getType()->isIntOrIntVectorTy(Width) ||
         V->getType()->isPtrOrPtrVectorTy()) {
@@ -173,21 +175,21 @@ Inst *ExprBuilderS::makeArrayRead(Value *V) {
       NumSignBits = ComputeNumSignBits(V, DL);
     }
 
-    ConstantRange Range = llvm::ConstantRange(Width, /*isFullSet=*/true);
-    if (HarvestConstantRange && V->getType()->isIntegerTy()) {
-      if (Instruction *I = dyn_cast<Instruction>(V)) {
-        // TODO: Find out a better way to get the current basic block
-        // with this approach, we might be restricting the constant
-        // range harvesting. Because range info. might be coming from
-        // llvm values other than instruction.
-        BasicBlock *BB = I->getParent();
-        auto LVIRange = LVI->getConstantRange(V, BB);
-        auto SC = SE->getSCEV(V);
-        auto R1 = LVIRange.intersectWith(SE->getSignedRange(SC));
-        auto R2 = LVIRange.intersectWith(SE->getUnsignedRange(SC));
-        Range = R1.getSetSize().ult(R2.getSetSize()) ? R1 : R2;
-      }
+  if (HarvestConstantRange && V->getType()->isIntegerTy()) {
+    if (Instruction *I = dyn_cast<Instruction>(V)) {
+      // TODO: Find out a better way to get the current basic block
+      // with this approach, we might be restricting the constant
+      // range harvesting. Because range info. might be coming from
+      // llvm values other than instruction.
+      BasicBlock *BB = I->getParent();
+      auto LVIRange = LVI->getConstantRange(V, BB);
+      auto SC = SE->getSCEV(V);
+      auto R1 = LVIRange.intersectWith(SE->getSignedRange(SC));
+      auto R2 = LVIRange.intersectWith(SE->getUnsignedRange(SC));
+      Range = R1.getSetSize().ult(R2.getSetSize()) ? R1 : R2;
     }
+  }
+#endif
 
   return IC.createVar(Width, Name, Range, Known.Zero, Known.One, NonZero, NonNegative,
                       PowOfTwo, Negative, NumSignBits, 0);
