@@ -557,6 +557,7 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
 	}
       }
     } else {
+#if (false)
       Function* F = Call->getCalledFunction();
       if(F && TLI->getLibFunc(*F, Func) && TLI->has(Func)) {
         switch (Func) {
@@ -571,6 +572,8 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
             break;
         }
       }
+#endif
+      llvm_unreachable();
     }
   }
 
@@ -831,6 +834,7 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
   for (auto &BB : F) {
     std::unique_ptr<BlockCandidateSet> BCS(new BlockCandidateSet);
     for (auto &I : BB) {
+#if (false)
       if (isa<ReturnInst>(I)) {
         if (PrintNegAtReturn) {
           auto V = I.getOperand(0);
@@ -886,6 +890,7 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
             llvm::outs() << "known signBits from compiler: 1\n";
         }
       }
+#endif
       // Harvest Uses (Operands)
       if (HarvestUses) {
         std::unordered_set<llvm::Instruction *> Visited;
@@ -915,10 +920,10 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
       if (I.hasNUses(0))
         continue;
       Inst *In;
-      if (HarvestDemandedBits) {
+      /*if (HarvestDemandedBits) {
         APInt DemandedBits = DB->getDemandedBits(&I);
         In = EB.get(&I, DemandedBits);
-      } else {
+        } else */{
         In = EB.get(&I);
       }
       In->HarvestKind = HarvestType::HarvestedFromDef;
