@@ -22,8 +22,8 @@ use File::Temp;
 use Time::HiRes;
 
 eval { require Sys::CPU; Sys::CPU->import(); };
-my $NPROCS = 1;
-#$NPROCS = Sys::CPU::cpu_count() if defined(&Sys::CPU::cpu_count);
+my $NPROCS = 4;
+$NPROCS = Sys::CPU::cpu_count() if defined(&Sys::CPU::cpu_count);
 
 my $souper = "@CMAKE_BINARY_DIR@/souper";
 my $llvmas = "@LLVM_BINDIR@/llvm-as";
@@ -93,15 +93,15 @@ sub souper_known ($) {
     if ($NEG) {
         $arg = "-infer-neg -infer-rhs -solver-timeout=10";
     } elsif ($NONNEG) {
-        $arg = "-infer-non-neg -infer-rhs -solver-timeout=30";
+        $arg = "-infer-non-neg -infer-rhs -solver-timeout=10";
     } elsif ($NONZERO) {
-        $arg = "-infer-non-zero -infer-rhs -solver-timeout=30";
+        $arg = "-infer-non-zero -infer-rhs -solver-timeout=10";
     } elsif ($POWERTWO) {
-        $arg = "-infer-power-two -infer-rhs -solver-timeout=30";
+        $arg = "-infer-power-two -infer-rhs -solver-timeout=10";
     } elsif ($KNOWNBITS) {
-        $arg = "-infer-known-bits -infer-rhs -solver-timeout=30";
+        $arg = "-infer-known-bits -infer-rhs -solver-timeout=10";
     } elsif ($SIGNBITS) {
-        $arg = "-infer-sign-bits -infer-rhs -solver-timeout=30";
+        $arg = "-infer-sign-bits -infer-rhs -solver-timeout=10";
     }
     my $cmd = "${check} $solver $arg < $tmpfn 2>/dev/null |";
     open INF, $cmd;
@@ -383,15 +383,12 @@ sub compare_facts($$) {
 
 sub go($$) {
     (my $opt, my $counter) = @_;
-    print "In go(), counter = $counter\n";
+    print "LHS Counter = $counter\n";
     my $ret = "";
     $ret .= "$opt";
     $ret .= "\n";
 
-    my $starttime = time;
     my $sk = souper_known($opt);
-    my $totaltime = time - $starttime;
-    $ret .= "Elapsed Souper time: " . $totaltime . "\n";
     $ret .= "; known from Souper:   $sk\n";
 
     my $lk;
@@ -410,22 +407,14 @@ sub go($$) {
             }
         }
     } else {
-        my $starttime = time;
         $lk = llvm_known($opt);
-        my $totaltime = time - $starttime;
-        $ret .= "Elapsed LLVM time: " . $totaltime . "\n";
     }
     $ret .= "; known from compiler: $lk\n";
-    print "sk = $sk , lk = $lk\n";
 
     my $print = 0;
     if ($sk ne $lk) {
-        print "counter for sk != lk => $counter\n";
         $print = 1;
-        my $starttime = time;
         $ret .= compare_facts($sk, $lk);
-        my $totaltime = time - $starttime;
-        $ret .= "Elapsed comparison time: " . $totaltime . "\n";
     }
     $ret .= "\n";
     #$ret .= "; total static profile = $sprofiles{$opt}\n";
@@ -472,12 +461,9 @@ foreach my $opt (sort bylen keys %toprint) {
     die unless $num_running < $NPROCS;
     my $pid = fork();
     die unless $pid >= 0;
-    my $starttime = time;
     go($opt, $counter) if $pid == 0;
     # make sure we're in the parent
     die unless $$ == $opid;
-    my $totaltime = time - $starttime;
-    print "counter = $counter, total time for go(): $totaltime\n";
     $num_running++;
 }
 
