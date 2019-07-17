@@ -524,6 +524,10 @@ bool Parser::typeCheckInst(Inst::Kind IK, unsigned &Width,
   case Inst::Slt:
   case Inst::Ule:
   case Inst::Sle:
+  case Inst::FAdd:
+  case Inst::FSub:
+  case Inst::FMul:
+  case Inst::FDiv:
     MaxOps = 2;
     break;
 

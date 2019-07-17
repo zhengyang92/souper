@@ -445,6 +445,14 @@ const char *Inst::getKindName(Kind K) {
     return "reservedinst";
   case Hole:
     return "hole";
+  case FAdd:
+    return "fadd";
+  case FSub:
+    return "fsub";
+  case FMul:
+    return "fmul";
+  case FDiv:
+    return "fdiv";
   case SAddO:
   case UAddO:
   case SSubO:
@@ -520,6 +528,10 @@ Inst::Kind Inst::getKind(std::string Name) {
                    .Case("reservedinst", Inst::ReservedInst)
                    .Case("hole", Inst::Hole)
                    .Case("reservedconst", Inst::ReservedConst)
+                   .Case("fadd", Inst::FAdd)
+                   .Case("fsub", Inst::FSub)
+                   .Case("fmul", Inst::FMul)
+                   .Case("fdiv", Inst::FDiv)
                    .Default(Inst::None);
 }
 
