@@ -83,6 +83,10 @@ static llvm::cl::opt<bool> PrintSignBitsAtReturn(
     "print-sign-bits-at-return",
     llvm::cl::desc("Print sign bits dfa in each value returned from a function (default=false)"),
     llvm::cl::init(false));
+static llvm::cl::opt<bool> PrintRangeAtReturn(
+    "print-range-at-return",
+    llvm::cl::desc("Print range inforation in each value returned from a function (default=false)"),
+    llvm::cl::init(false));
 
 extern bool UseAlive;
 
@@ -924,6 +928,22 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
             llvm::outs() << "known signBits from compiler: " << NumSignBits << "\n";
           else
             llvm::outs() << "known signBits from compiler: 1\n";
+        }
+        if (PrintRangeAtReturn && isa<ReturnInst>(I)) {
+          auto V = I.getOperand(0);
+          auto DL = F.getParent()->getDataLayout();
+          unsigned Width = DL.getTypeSizeInBits(V->getType());
+          ConstantRange Range = llvm::ConstantRange(Width, /*isFullSet=*/true);
+          if (V->getType()->isIntegerTy()) {
+            if (Instruction *I = dyn_cast<Instruction>(V)) {
+              BasicBlock *BB = I->getParent();
+              auto LVIRange = LVI->getConstantRange(V, BB);
+              auto SC = SE->getSCEV(V);
+              auto R1 = LVIRange.intersectWith(SE->getSignedRange(SC));
+              auto R2 = LVIRange.intersectWith(SE->getUnsignedRange(SC));
+              Range = R1.getSetSize().ult(R2.getSetSize()) ? R1 : R2;
+            }
+           }
         }
       }
       // Harvest Uses (Operands)
