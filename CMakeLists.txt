@@ -415,6 +415,9 @@ configure_file(${CMAKE_SOURCE_DIR}/utils/cache_import.in ${CMAKE_BINARY_DIR}/cac
 configure_file(${CMAKE_SOURCE_DIR}/utils/cache_infer.in ${CMAKE_BINARY_DIR}/cache_infer @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/souper2llvm.in ${CMAKE_BINARY_DIR}/souper2llvm @ONLY)
 configure_file(${CMAKE_SOURCE_DIR}/utils/souper2llvm-precision-test.in ${CMAKE_BINARY_DIR}/souper2llvm-precision-test @ONLY)
+configure_file(${CMAKE_SOURCE_DIR}/utils/cache_range.in ${CMAKE_BINARY_DIR}/cache_range @ONLY)
+configure_file(${CMAKE_SOURCE_DIR}/utils/cache_demandedbits.in ${CMAKE_BINARY_DIR}/cache_demandedbits @ONLY)
+configure_file(${CMAKE_SOURCE_DIR}/utils/souper2llvm-db.in ${CMAKE_BINARY_DIR}/souper2llvm-db @ONLY)
 
 if (BUILD_CLANG_TOOL)
   configure_file(${CMAKE_SOURCE_DIR}/utils/sclang.in ${CMAKE_BINARY_DIR}/sclang @ONLY)
