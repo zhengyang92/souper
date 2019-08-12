@@ -566,10 +566,11 @@ void Inst::Profile(llvm::FoldingSetNodeID &ID) const {
     ID.AddPointer(Op);
 }
 
-Inst *InstContext::getConst(const llvm::APInt &Val) {
+Inst *InstContext::getConst(const llvm::APInt &Val, bool IsFloat) {
   llvm::FoldingSetNodeID ID;
   ID.AddInteger(Inst::Const);
   ID.AddInteger(Val.getBitWidth());
+  ID.AddInteger(IsFloat);
   Val.Profile(ID);
 
   void *IP = 0;
@@ -581,14 +582,16 @@ Inst *InstContext::getConst(const llvm::APInt &Val) {
   N->K = Inst::Const;
   N->Width = Val.getBitWidth();
   N->Val = Val;
+  N->IsFloat = IsFloat;
   InstSet.InsertNode(N, IP);
   return N;
 }
 
-Inst *InstContext::getUntypedConst(const llvm::APInt &Val) {
+Inst *InstContext::getUntypedConst(const llvm::APInt &Val, bool IsFloat) {
   llvm::FoldingSetNodeID ID;
   ID.AddInteger(Inst::UntypedConst);
   ID.AddInteger(0);
+  ID.AddInteger(IsFloat);
   Val.Profile(ID);
 
   void *IP = 0;
@@ -600,6 +603,7 @@ Inst *InstContext::getUntypedConst(const llvm::APInt &Val) {
   N->K = Inst::UntypedConst;
   N->Width = 0;
   N->Val = Val;
+  N->IsFloat = IsFloat;
   InstSet.InsertNode(N, IP);
   return N;
 }

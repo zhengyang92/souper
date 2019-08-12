@@ -233,8 +233,8 @@ class InstContext {
   unsigned ReservedConstCounter = 0;
 
 public:
-  Inst *getConst(const llvm::APInt &I);
-  Inst *getUntypedConst(const llvm::APInt &I);
+  Inst *getConst(const llvm::APInt &I, bool IsFloat = false);
+  Inst *getUntypedConst(const llvm::APInt &I, bool IsFloat = false);
   Inst *getReservedConst();
   Inst *getReservedInst();
 
