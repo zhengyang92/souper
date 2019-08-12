@@ -123,6 +123,7 @@ struct Inst : llvm::FoldingSetNode {
     FSub,
     FMul,
     FDiv,
+    FRem,
 
     ReservedConst,
     ReservedInst,
@@ -172,6 +173,7 @@ struct Inst : llvm::FoldingSetNode {
   HarvestType HarvestKind;
   llvm::BasicBlock* HarvestFrom;
   llvm::ConstantRange Range=llvm::ConstantRange(1);
+  bool IsFloat = false;
 };
 
 /// A mapping from an Inst to a replacement. This may either represent a
@@ -252,7 +254,7 @@ public:
   Inst *getInst(Inst::Kind K, unsigned Width, const std::vector<Inst *> &Ops,
                 bool Available=true);
   Inst *getInst(Inst::Kind K, unsigned Width, const std::vector<Inst *> &Ops,
-                llvm::APInt DemandedBits, bool Available);
+                llvm::APInt DemandedBits, bool IsFloat, bool Available);
 };
 
 struct SynthesisContext {

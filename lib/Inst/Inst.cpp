@@ -130,7 +130,10 @@ std::string ReplacementContext::printInstImpl(Inst *I, llvm::raw_ostream &Out,
 
   case Inst::Const:
     I->Val.print(SS, false);
-    SS << ":i" << I->Val.getBitWidth();
+    if (I->IsFloat)
+      SS << ":f" << I->Val.getBitWidth();
+    else
+      SS << ":i" << I->Val.getBitWidth();
     return SS.str();
 
   case Inst::UntypedConst:
@@ -538,6 +541,7 @@ Inst::Kind Inst::getKind(std::string Name) {
 void Inst::Profile(llvm::FoldingSetNodeID &ID) const {
   ID.AddInteger(K);
   ID.AddInteger(Width);
+  ID.AddInteger(IsFloat);
 
   switch (K) {
   case Const:
@@ -715,7 +719,7 @@ Inst *InstContext::getPhi(Block *B, const std::vector<Inst *> &Ops) {
 
 Inst *InstContext::getInst(Inst::Kind K, unsigned Width,
                            const std::vector<Inst *> &Ops,
-                           llvm::APInt DemandedBits, bool Available) {
+                           llvm::APInt DemandedBits, bool IsFloat, bool Available) {
   std::vector<Inst *> OrderedOps;
 
   const std::vector<Inst *> *InstOps;
@@ -730,6 +734,7 @@ Inst *InstContext::getInst(Inst::Kind K, unsigned Width,
   llvm::FoldingSetNodeID ID;
   ID.AddInteger(K);
   ID.AddInteger(Width);
+  ID.AddInteger(IsFloat);
   for (auto O : *InstOps)
     ID.AddPointer(O);
   if (!DemandedBits.isAllOnesValue())
@@ -748,6 +753,7 @@ Inst *InstContext::getInst(Inst::Kind K, unsigned Width,
   N->Available = Available;
   N->HarvestKind = HarvestType::HarvestedFromDef;
   N->HarvestFrom = nullptr;
+  N->IsFloat = IsFloat;
   InstSet.InsertNode(N, IP);
   return N;
 }
@@ -756,7 +762,10 @@ Inst *InstContext::getInst(Inst::Kind K, unsigned Width,
                            const std::vector<Inst *> &Ops,
                            bool Available) {
   llvm::APInt DemandedBits = llvm::APInt::getAllOnesValue(Width);
-  return getInst(K, Width, Ops, DemandedBits, Available);
+  bool IsFloat = false;
+  if (K == Inst::FAdd || K == Inst::FSub || K == Inst::FMul || K == Inst::FDiv || K == Inst::FRem)
+    IsFloat = true;
+  return getInst(K, Width, Ops, DemandedBits, IsFloat, Available);
 }
 
 bool Inst::isCommutative(Inst::Kind K) {
@@ -1103,7 +1112,7 @@ Inst *souper::getInstCopy(Inst *I, InstContext &IC,
   } else if (I->K == Inst::Const || I->K == Inst::UntypedConst) {
     return I;
   } else {
-    Copy = IC.getInst(I->K, I->Width, Ops, I->DemandedBits, I->Available);
+    Copy = IC.getInst(I->K, I->Width, Ops, I->DemandedBits, I->IsFloat, I->Available);
   }
   assert(Copy);
   InstCache[I] = Copy;

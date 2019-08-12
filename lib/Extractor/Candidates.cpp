@@ -430,6 +430,26 @@ Inst *ExprBuilder::buildHelper(Value *V) {
         else
           K = Inst::AShr;
         break;
+      case Instruction::FAdd:
+        assert (L->IsFloat && R->IsFloat && "Operand should be a float");
+        K = Inst::FAdd;
+        break;
+      case Instruction::FSub:
+        assert (L->IsFloat && R->IsFloat && "Operand should be a float");
+        K = Inst::FSub;
+        break;
+      case Instruction::FMul:
+        assert (L->IsFloat && R->IsFloat && "Operand should be a float");
+        K = Inst::FMul;
+        break;
+      case Instruction::FDiv:
+        assert (L->IsFloat && R->IsFloat && "Operand should be a float");
+        K = Inst::FDiv;
+        break;
+      case Instruction::FRem:
+        assert (L->IsFloat && R->IsFloat && "Operand should be a float");
+        K = Inst::FRem;
+        break;
       default:
         llvm_unreachable("not BinOp");
     }
@@ -950,7 +970,7 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
       }
 
       // Harvest Defs
-      if (!I.getType()->isIntegerTy())
+      if (!I.getType()->isIntegerTy() && !I.getType()->isFloatingPointTy())
         continue;
       if (I.hasNUses(0))
         continue;
