@@ -944,6 +944,8 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
               Range = R1.getSetSize().ult(R2.getSetSize()) ? R1 : R2;
             }
            }
+           llvm::outs() << "known at return: " << "[" << Range.getLower() << ","
+                        << Range.getUpper() << ")" << "\n";
         }
       }
       // Harvest Uses (Operands)
