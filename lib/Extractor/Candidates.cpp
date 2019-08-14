@@ -143,7 +143,7 @@ bool ExprBuilderS::isLoopEntryPoint(PHINode *Phi) {
   BasicBlock *BB = Phi->getParent();
   // If LLVM can determine if BB is a loop header, simply return true.
   // Presumably, this should handle structured loops.
-  if (LI->isLoopHeader(BB))
+  if (LI && LI->isLoopHeader(BB))
     return true;
   if (Phi->getNumIncomingValues() <= 1)
     return false;
@@ -492,7 +492,9 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
     LibFunc Func;
     if (auto II = dyn_cast<IntrinsicInst>(Call)) {
       Inst *L = get(II->getOperand(0));
-      Inst *R = get(II->getOperand(1));
+      Inst *R = nullptr;
+      if(II->getNumOperands() > 1)
+        R = get(II->getOperand(1));
       switch (II->getIntrinsicID()) {
         default:
           break;
