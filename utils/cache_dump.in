@@ -43,6 +43,7 @@ Options:
   -powerTwo    Infer power of two dfa
   -nonZero    Infer non Zero dfa
   -signBits    Infer number of sign bits dfa
+  -range    Infer constant range dfa
   -merge       Merge optimizations that differ only in bitwidths and constants
   -noopts      Dump not-optimizations instead of optimizations
   -parse       Ensure that each LHS in the cache parses as Souper
@@ -87,6 +88,7 @@ GetOptions(
     "powerTwo" => \$POWERTWO,
     "nonZero" => \$NONZERO,
     "signBits" => \$SIGNBITS,
+    "range" => \$RANGE,
     "sort=s" => \$SORT,
     "raw"  => \$RAW,
     "reduce" => \$REDUCE,
@@ -249,6 +251,23 @@ sub nonZero ($) {
 }
 
 sub signBits ($) {
+    (my $opt) = @_;
+    (my $fh, my $tmpfn) = File::Temp::tempfile();
+    print $fh $opt;
+    $fh->flush();
+    my $arg = "-infer-sign-bits";
+    my $cmd = "${check} $solver $arg < $tmpfn 2>/dev/null |";
+    # print "<${cmd}>\n";
+    open INF, $cmd;
+    while (my $line = <INF>) {
+       print $line;
+    }
+    close INF;
+    close $fh;
+    unlink $tmpfn;
+}
+
+sub range ($) {
     (my $opt) = @_;
     (my $fh, my $tmpfn) = File::Temp::tempfile();
     print $fh $opt;
@@ -654,6 +673,7 @@ foreach my $opt (sort $byx keys %toprint) {
     powerTwo($opt) if $POWERTWO;
     nonZero($opt) if $NONZERO;
     signBits($opt) if $SIGNBITS;
+    range($opt) if $RANGE;
     print "\n";
     print "; total static profile = $sprofiles{$opt}\n";
     my %h = %{$sprofile_locs{$opt}};
