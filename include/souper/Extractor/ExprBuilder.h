@@ -37,7 +37,7 @@ class ExprBuilder {
   };
 
   std::map<Block *, BlockPCPredMap> BlockPCMap;
-  const unsigned MAX_PHI_DEPTH = 25;
+  const unsigned MAX_PHI_DEPTH = 10;
 public:
   enum Builder {
     KLEE

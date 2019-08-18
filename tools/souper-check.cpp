@@ -60,6 +60,10 @@ static cl::opt<bool> InferRange("infer-range",
     cl::desc("Compute range for the candidate (default=false)"),
     cl::init(false));
 
+static cl::opt<bool> InferDemandedBits("infer-demanded-bits",
+    cl::desc("Compute demanded bits for the candidate (default=false)"),
+    cl::init(false));
+
 static cl::opt<bool> PrintRepl("print-replacement",
     cl::desc("Print the replacement, if valid (default=false)"),
     cl::init(false));
@@ -224,6 +228,22 @@ int SolveInst(const MemoryBufferRef &MB, Solver *S) {
       llvm::outs() << "known range from souper: " << "[" << Range.getLower()
                    << "," << Range.getUpper() << ")" << "\n";
       ++Success;
+    }
+
+    if (InferDemandedBits) {
+      std::map<std::string, APInt> DB_vect;
+      if (std::error_code EC = S->testDemandedBits(Rep.BPCs, Rep.PCs, Rep.Mapping.LHS,
+                                            DB_vect, IC)) {
+        llvm::errs() << EC.message() << '\n';
+      }
+      for (std::map<std::string,APInt>::iterator it = DB_vect.begin();
+           it != DB_vect.end(); ++it) {
+        std::string var_name = it->first;
+        llvm::APInt DB_for_var = DB_vect[var_name];
+        std::string s = Inst::getDemandedBitsString(DB_for_var);
+        llvm::outs() << "demanded-bits from souper for %" << var_name << " : "<< s << "\n";
+      }
+      return 0;
     }
 
     if (InferRHS || ReInferRHS) {

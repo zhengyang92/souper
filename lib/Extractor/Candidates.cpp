@@ -87,6 +87,10 @@ static llvm::cl::opt<bool> PrintRangeAtReturn(
     "print-range-at-return",
     llvm::cl::desc("Print range inforation in each value returned from a function (default=false)"),
     llvm::cl::init(false));
+static llvm::cl::opt<bool> PrintDemandedBitsAtReturn(
+    "print-demanded-bits-from-harvester",
+    llvm::cl::desc("Print demanded bits (default=false)"),
+    llvm::cl::init(false));
 
 extern bool UseAlive;
 
@@ -946,6 +950,21 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
            }
            llvm::outs() << "known at return: " << "[" << Range.getLower() << ","
                         << Range.getUpper() << ")" << "\n";
+        }
+      }
+      // Demanded bits
+      if (PrintDemandedBitsAtReturn && I.getType()->isIntegerTy()) {
+        if (auto BO = dyn_cast<BinaryOperator>(&I)) {
+          auto AddOp = BO->getOpcode();
+          if (AddOp == Instruction::Add) {
+            if (auto ConstZeroOp = dyn_cast<ConstantInt>(BO->getOperand(1))) {
+              if (ConstZeroOp->isZero()) {
+                APInt DemandedBitsVal = DB->getDemandedBits(&I);
+                llvm::outs() << "demanded-bits from compiler for " << I.getName() << " : "
+                             << Inst::getDemandedBitsString(DemandedBitsVal) << "\n";
+              }
+            }
+          }
         }
       }
       // Harvest Uses (Operands)
