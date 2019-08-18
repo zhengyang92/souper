@@ -274,7 +274,7 @@ sub range ($) {
     (my $fh, my $tmpfn) = File::Temp::tempfile();
     print $fh $opt;
     $fh->flush();
-    my $arg = "-infer-sign-bits";
+    my $arg = "-infer-range";
     my $cmd = "${check} $solver $arg < $tmpfn 2>/dev/null |";
     # print "<${cmd}>\n";
     open INF, $cmd;
