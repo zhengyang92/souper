@@ -675,7 +675,7 @@ public:
     std::map <Inst *, llvm::APInt> ResultMap;
     ConstantSynthesis CS;
     CS.synthesize(SMTSolver.get(), BPCs, PCs, InstMapping(Guess, IC.getConst(APInt(1, true))),
-                  ConstSet, ResultMap, IC, /*MaxTries=*/30, Timeout);
+                  ConstSet, ResultMap, IC, /*MaxTries=*/50, Timeout);
     if (ResultMap.empty()) {
       IsFound = false;
     } else {
