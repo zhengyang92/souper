@@ -68,7 +68,7 @@ sub souper_known ($) {
     $fh->flush();
     #my $arg = "-infer-range -souper-exploit-ub=false -solver-timeout=30";
     my $arg = "-infer-range -souper-range-max-precise -solver-timeout=30";
-    my $cmd = "${check} $solver $arg < $tmpfn 2>/dev/null |";
+    my $cmd = "${check} $solver $arg < $tmpfn 2>&1 |";
     # print "<${cmd}>\n";
     open INF, $cmd;
     my $k = "";
@@ -76,7 +76,9 @@ sub souper_known ($) {
 	chomp $line;
 	if ($line =~ /known range from souper: (.*)$/) {
 	    $k = $1;
-	}
+	} elsif ($line =~ /LLVM ERROR: Error: Constant synthesize reached MAX_TRIES/) {
+        $k = "IMPRECISE";
+    }
     }
     close INF;
     close $fh;
@@ -238,6 +240,8 @@ sub go {
     my $sk = souper_known($opt);
     if ($sk eq "") {
         $ret .= "known from Souper:   timeout\n";
+    } elsif ($sk eq "IMPRECISE") {
+        $ret .= "known from Souper:   imprecise\n";
     } else {
         $ret .= "known from Souper:   $sk\n";
     }
