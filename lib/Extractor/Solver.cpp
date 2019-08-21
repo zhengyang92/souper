@@ -41,6 +41,49 @@ STATISTIC(ExternalMisses, "Number of external cache misses");
 using namespace souper;
 using namespace llvm;
 
+
+llvm::APInt getKnownZeroFromStr(std::string S) {
+  APInt Zero = APInt::getNullValue(S.length());
+  for (int K = S.length() - 1; K >= 0; --K) {
+     int J = S.length() - 1 - K;
+     if (S[K] == '0')
+       Zero.setBit(J);
+     else
+       Zero.clearBit(J);
+   }
+   return Zero;
+}
+
+llvm::APInt getKnownOneFromStr(std::string S) {
+  APInt One = APInt::getNullValue(S.length());
+  for (int K = S.length() - 1; K >= 0; --K) {
+     int J = S.length() - 1 - K;
+     if (S[K] == '1')
+       One.setBit(J);
+     else
+       One.clearBit(J);
+   }
+   return One;
+}
+
+std::string getKnownBitsStr(llvm::APInt Zero, llvm::APInt One) {
+  std::string Str;
+  for (int K = Zero.getBitWidth() - 1; K >= 0; --K) {
+    if (Zero[K] && One[K])
+      llvm_unreachable("KnownZero and KnownOnes bit can't be set to 1 together");
+    if (Zero[K]) {
+      Str.append("0");
+    } else {
+      if (One[K])
+        Str.append("1");
+      else
+        Str.append("x");
+    }
+  }
+  return Str;
+}
+
+
 namespace {
 
 static cl::opt<bool> NoInfer("souper-no-infer",
@@ -147,6 +190,7 @@ public:
       if (testKnown(BPCs, PCs, Known.Zero, OneGuess, LHS, IC))
         Known.One = OneGuess;
     }
+
     return std::error_code();
   }
 
@@ -810,7 +854,23 @@ public:
                             const std::vector<InstMapping> &PCs,
                             Inst *LHS, KnownBits &Known,
                             InstContext &IC) override {
-    return UnderlyingSolver->knownBits(BPCs, PCs, LHS, Known, IC);
+    ReplacementContext Context;
+    std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
+    if (LHSStr.length() > MaxLHSSize)
+      return std::make_error_code(std::errc::value_too_large);
+    std::string K;
+    if (KV->hGet(LHSStr, "knownbits", K)) {
+      Known.Zero = getKnownZeroFromStr(K);
+      Known.One = getKnownOneFromStr(K);
+      return std::error_code();
+    } else {
+      std::error_code EC = UnderlyingSolver->knownBits(BPCs, PCs, LHS, Known, IC);
+      std::string KnownStr;
+      if (!EC)
+        KnownStr = getKnownBitsStr(Known.Zero, Known.One);
+      KV->hSet(LHSStr, "knownbits", KnownStr);
+      return EC;
+    }
   }
 
   std::error_code powerTwo(const BlockPCs &BPCs,
