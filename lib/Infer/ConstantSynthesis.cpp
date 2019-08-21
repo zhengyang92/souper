@@ -28,7 +28,7 @@ ConstantSynthesis::synthesize(SMTLIBSolver *SMTSolver,
                               const std::vector<InstMapping> &PCs,
                               InstMapping Mapping, std::set<Inst *> &ConstSet,
                               std::map <Inst *, llvm::APInt> &ResultMap,
-                              InstContext &IC, unsigned MaxTries, unsigned Timeout) {
+                              InstContext &IC, unsigned MaxTries, unsigned Timeout, bool ErrorOnOutTry) {
 
   Inst *TrueConst = IC.getConst(llvm::APInt(1, true));
   Inst *FalseConst = IC.getConst(llvm::APInt(1, false));
@@ -164,7 +164,10 @@ ConstantSynthesis::synthesize(SMTLIBSolver *SMTSolver,
     llvm::errs() << MaxTries;
     llvm::errs() << ")\n";
   }
-  return EC;
+  if (ErrorOnOutTry)
+    return std::make_error_code(std::errc::result_out_of_range);
+  else
+    return EC;
 }
 
 }

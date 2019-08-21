@@ -33,7 +33,7 @@ public:
                              const std::vector<InstMapping> &PCs,
                              InstMapping Mapping, std::set <Inst *> &ConstSet,
                              std::map <Inst *, llvm::APInt> &ResultMap,
-                             InstContext &IC, unsigned MaxTries, unsigned Timeout);
+                             InstContext &IC, unsigned MaxTries, unsigned Timeout, bool ErrorOnOutTry = false);
 
 };
 }

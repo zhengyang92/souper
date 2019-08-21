@@ -67,6 +67,10 @@ static cl::opt<bool> EnableExhaustiveSynthesis("souper-exhaustive-synthesis",
 static cl::opt<int> MaxLHSSize("souper-max-lhs-size",
     cl::desc("Max size of LHS (in bytes) to put in external cache (default=1024)"),
     cl::init(1024));
+static cl::opt<bool> RangeMaxPrecise("souper-range-max-precise",
+    cl::desc("Terminate with error message when constant synthesize reaches MAX_TRIES(default=false)"),
+    cl::init(false));
+
 
 class BaseSolver : public Solver {
   std::unique_ptr<SMTLIBSolver> SMTSolver;
@@ -674,8 +678,15 @@ public:
     std::set<Inst *> ConstSet{ReservedX};
     std::map <Inst *, llvm::APInt> ResultMap;
     ConstantSynthesis CS;
-    CS.synthesize(SMTSolver.get(), BPCs, PCs, InstMapping(Guess, IC.getConst(APInt(1, true))),
-                  ConstSet, ResultMap, IC, /*MaxTries=*/50, Timeout);
+    if (RangeMaxPrecise) {
+      auto EC = CS.synthesize(SMTSolver.get(), BPCs, PCs, InstMapping(Guess, IC.getConst(APInt(1, true))),
+                              ConstSet, ResultMap, IC, /*MaxTries=*/30, Timeout, true);
+      if (EC == std::errc::result_out_of_range)
+        llvm::report_fatal_error("Error: Constant synthesize reached MAX_TRIES(30), which might leads to imprecise results");
+    } else {
+      CS.synthesize(SMTSolver.get(), BPCs, PCs, InstMapping(Guess, IC.getConst(APInt(1, true))),
+                    ConstSet, ResultMap, IC, /*MaxTries=*/30, Timeout);
+    }
     if (ResultMap.empty()) {
       IsFound = false;
     } else {
