@@ -91,17 +91,17 @@ sub souper_known ($) {
     $fh->flush();
     my $arg = "";
     if ($NEG) {
-        $arg = "-infer-neg -infer-rhs -solver-timeout=10";
+        $arg = "-infer-neg -solver-timeout=10";
     } elsif ($NONNEG) {
-        $arg = "-infer-non-neg -infer-rhs -solver-timeout=10";
+        $arg = "-infer-non-neg -solver-timeout=10";
     } elsif ($NONZERO) {
-        $arg = "-infer-non-zero -infer-rhs -solver-timeout=10";
+        $arg = "-infer-non-zero -solver-timeout=10";
     } elsif ($POWERTWO) {
-        $arg = "-infer-power-two -infer-rhs -solver-timeout=10";
+        $arg = "-infer-power-two -solver-timeout=10";
     } elsif ($KNOWNBITS) {
-        $arg = "-infer-known-bits -infer-rhs -solver-timeout=10";
+        $arg = "-infer-known-bits -solver-timeout=10";
     } elsif ($SIGNBITS) {
-        $arg = "-infer-sign-bits -infer-rhs -solver-timeout=10";
+        $arg = "-infer-sign-bits -solver-timeout=10";
     }
     my $cmd = "${check} $solver $arg < $tmpfn 2>/dev/null |";
     open INF, $cmd;

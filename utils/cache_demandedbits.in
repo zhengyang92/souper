@@ -67,7 +67,7 @@ sub souper_known ($) {
     (my $fh, my $tmpfn) = File::Temp::tempfile();
     print $fh $opt;
     $fh->flush();
-    my $arg = "-infer-demanded-bits -infer-rhs -solver-timeout=30";
+    my $arg = "-infer-demanded-bits -solver-timeout=30";
     my $cmd = "${check} $solver $arg < $tmpfn 2>/dev/null |";
     # print "<${cmd}>\n";
     open INF, $cmd;
