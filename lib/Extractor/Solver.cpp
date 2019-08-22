@@ -41,6 +41,12 @@ STATISTIC(ExternalMisses, "Number of external cache misses");
 using namespace souper;
 using namespace llvm;
 
+std::string getDefaultKBStr(unsigned size) {
+  std::string S = "";
+  for (int I = 0; I < size; ++I)
+    S.append("x");
+  return S;
+}
 
 llvm::APInt getKnownZeroFromStr(std::string S) {
   APInt Zero = APInt::getNullValue(S.length());
@@ -67,7 +73,7 @@ llvm::APInt getKnownOneFromStr(std::string S) {
 }
 
 std::string getKnownBitsStr(llvm::APInt Zero, llvm::APInt One) {
-  std::string Str;
+  std::string Str = "";
   for (int K = Zero.getBitWidth() - 1; K >= 0; --K) {
     if (Zero[K] && One[K])
       llvm_unreachable("KnownZero and KnownOnes bit can't be set to 1 together");
@@ -510,7 +516,7 @@ public:
     auto Q = BuildQuery(IC, BPCs, PCs, Mapping, 0, /*Precondition=*/0);
     std::error_code EC = SMTSolver->isSatisfiable(Q, IsSat, 0, 0, Timeout);
     if (EC) {
-      llvm::report_fatal_error("Error: SMTSolver->isSatisfiable() failed in testing known bits");
+      //llvm::report_fatal_error("Error: SMTSolver->isSatisfiable() failed in testing known bits");
       return false;
     }
     return !IsSat;
@@ -865,7 +871,7 @@ public:
       return std::error_code();
     } else {
       std::error_code EC = UnderlyingSolver->knownBits(BPCs, PCs, LHS, Known, IC);
-      std::string KnownStr;
+      std::string KnownStr = getDefaultKBStr(LHS->Width);
       if (!EC)
         KnownStr = getKnownBitsStr(Known.Zero, Known.One);
       KV->hSet(LHSStr, "knownbits", KnownStr);
