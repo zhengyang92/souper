@@ -48,10 +48,10 @@ std::string getDefaultKBStr(unsigned size) {
   return S;
 }
 
-llvm::APInt getKnownZeroFromStr(std::string S) {
-  APInt Zero = APInt::getNullValue(S.length());
-  for (int K = S.length() - 1; K >= 0; --K) {
-     int J = S.length() - 1 - K;
+llvm::APInt getKnownZeroFromStr(std::string S, unsigned W) {
+  APInt Zero = APInt::getNullValue(W);
+  for (int K = W - 1; K >= 0; --K) {
+     int J = W - 1 - K;
      if (S[K] == '0')
        Zero.setBit(J);
      else
@@ -60,10 +60,10 @@ llvm::APInt getKnownZeroFromStr(std::string S) {
    return Zero;
 }
 
-llvm::APInt getKnownOneFromStr(std::string S) {
-  APInt One = APInt::getNullValue(S.length());
-  for (int K = S.length() - 1; K >= 0; --K) {
-     int J = S.length() - 1 - K;
+llvm::APInt getKnownOneFromStr(std::string S, unsigned W) {
+  APInt One = APInt::getNullValue(W);
+  for (int K = W - 1; K >= 0; --K) {
+     int J = W - 1 - K;
      if (S[K] == '1')
        One.setBit(J);
      else
@@ -866,8 +866,8 @@ public:
       return std::make_error_code(std::errc::value_too_large);
     std::string K;
     if (KV->hGet(LHSStr, "knownbits", K)) {
-      Known.Zero = getKnownZeroFromStr(K);
-      Known.One = getKnownOneFromStr(K);
+      Known.Zero = getKnownZeroFromStr(K, LHS->Width);
+      Known.One = getKnownOneFromStr(K, LHS->Width);
       return std::error_code();
     } else {
       std::error_code EC = UnderlyingSolver->knownBits(BPCs, PCs, LHS, Known, IC);
