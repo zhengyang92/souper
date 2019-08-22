@@ -584,7 +584,7 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
         }
       }
 #endif
-      llvm_unreachable("not Call Inst");
+      //      llvm_unreachable("not Call Inst");
     }
   }
 
