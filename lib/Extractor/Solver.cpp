@@ -136,7 +136,7 @@ public:
                                                   Mapping, 0, /*Precondition=*/0),
                                                   IsSat, 0, 0, Timeout);
     if (EC) {
-      llvm::report_fatal_error("Error: SMTSolver->isSatisfiable() failed in testing zero MSB");
+      //llvm::report_fatal_error("Error: SMTSolver->isSatisfiable() failed in testing zero MSB");
       return false;
     }
     return !IsSat;
@@ -153,7 +153,7 @@ public:
                                                   Mapping, 0, /*Precondition=*/0),
                                                   IsSat, 0, 0, Timeout);
     if (EC) {
-      llvm::report_fatal_error("Error: SMTSolver->isSatisfiable() failed in testing one MSB");
+      //llvm::report_fatal_error("Error: SMTSolver->isSatisfiable() failed in testing one MSB");
       return false;
     }
     return !IsSat;
@@ -218,8 +218,11 @@ public:
     std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs,
                                                   Mapping, 0, /*Precondition=*/0),
                                                   IsSat, 0, 0, Timeout);
-    if (EC)
-      llvm::report_fatal_error("Error: SMTSolver->isSatisfiable() failed in testing powerTwo");
+    if (EC) {
+      //llvm::report_fatal_error("Error: SMTSolver->isSatisfiable() failed in testing powerTwo");
+      PowTwo = false;
+      return std::error_code();
+    }
 
     if (!IsSat)
       PowTwo = true;
@@ -241,8 +244,11 @@ public:
     std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs,
                                                   Mapping, 0, /*Precondition=*/0),
                                                   IsSat, 0, 0, Timeout);
-    if (EC)
-      llvm::report_fatal_error("Error: SMTSolver->isSatisfiable() failed in testing nonZero");
+    if (EC) {
+      //llvm::report_fatal_error("Error: SMTSolver->isSatisfiable() failed in testing nonZero");
+      NonZero = false;
+      return std::error_code();
+    }
 
     if (!IsSat)
       NonZero = true;
@@ -270,8 +276,11 @@ public:
       std::error_code EC = SMTSolver->isSatisfiable(BuildQuery(IC, BPCs, PCs,
                                                     Mapping, 0, /*Precondition=*/0),
                                                     IsSat, 0, 0, Timeout);
-      if (EC)
-        llvm::report_fatal_error("Error: SMTSolver->isSatisfiable() failed in testing sign bits");
+      if (EC) {
+        //llvm::report_fatal_error("Error: SMTSolver->isSatisfiable() failed in testing sign bits");
+        SignBits = I-1; // if it times out, return at least I-1 signbits that have been already verified.
+        return std::error_code();
+      }
 
       if (!IsSat) {
         SignBits = I;
@@ -819,6 +828,7 @@ public:
                                     const std::vector<InstMapping> &PCs,
                                     Inst *LHS,
                                     InstContext &IC) override {
+    // TODO: caching
     return UnderlyingSolver->constantRange(BPCs, PCs, LHS, IC);
   }
 
@@ -846,14 +856,60 @@ public:
                               const std::vector<InstMapping> &PCs,
                               Inst *LHS, bool &NonNegative,
                               InstContext &IC) override {
-    return UnderlyingSolver->nonNegative(BPCs, PCs, LHS, NonNegative, IC);
+    // TODO: caching
+    //return UnderlyingSolver->nonNegative(BPCs, PCs, LHS, NonNegative, IC);
+    ReplacementContext Context;
+    std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
+    if (LHSStr.length() > MaxLHSSize)
+      return std::make_error_code(std::errc::value_too_large);
+    std::string NNeg;
+    if (KV->hGet(LHSStr, "non-negative", NNeg)) {
+      if (NNeg == "true")
+        NonNegative = true;
+      else // for NNeg = "false" or "" (default is false)
+        NonNegative = false;
+      return std::error_code();
+    } else {
+      std::error_code EC = UnderlyingSolver->nonNegative(BPCs, PCs, LHS, NonNegative, IC);
+      std::string NonNegStr = "false"; // default fact
+      if (!EC) {
+        if (NonNegative)
+          NonNegStr = "true";
+        else
+          NonNegStr = "false";
+      }
+      KV->hSet(LHSStr, "non-negative", NonNegStr);
+      return EC;
+    }
   }
 
   std::error_code negative(const BlockPCs &BPCs,
                            const std::vector<InstMapping> &PCs,
                            Inst *LHS, bool &Negative,
                            InstContext &IC) override {
-    return UnderlyingSolver->negative(BPCs, PCs, LHS, Negative, IC);
+    ReplacementContext Context;
+    std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
+    if (LHSStr.length() > MaxLHSSize)
+      return std::make_error_code(std::errc::value_too_large);
+    std::string Neg;
+    if (KV->hGet(LHSStr, "negative", Neg)) {
+      if (Neg == "true")
+        Negative = true;
+      else // for Neg = "false" or "" (default is false)
+        Negative = false;
+      return std::error_code();
+    } else {
+      std::error_code EC = UnderlyingSolver->negative(BPCs, PCs, LHS, Negative, IC);
+      std::string NegStr = "false"; // default fact
+      if (!EC) {
+        if (Negative)
+          NegStr = "true";
+        else
+          NegStr = "false";
+      }
+      KV->hSet(LHSStr, "negative", NegStr);
+      return EC;
+    }
   }
 
   std::error_code knownBits(const BlockPCs &BPCs,
@@ -883,21 +939,93 @@ public:
                            const std::vector<InstMapping> &PCs,
                            Inst *LHS, bool &PowerTwo,
                            InstContext &IC) override {
-    return UnderlyingSolver->powerTwo(BPCs, PCs, LHS, PowerTwo, IC);
+    // TODO: caching
+    //return UnderlyingSolver->powerTwo(BPCs, PCs, LHS, PowerTwo, IC);
+    ReplacementContext Context;
+    std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
+    if (LHSStr.length() > MaxLHSSize)
+      return std::make_error_code(std::errc::value_too_large);
+    std::string Power;
+    if (KV->hGet(LHSStr, "power2", Power)) {
+      if (Power == "true")
+        PowerTwo = true;
+      else // for Power = "false" or "" (default is false)
+        PowerTwo = false;
+      return std::error_code();
+    } else {
+      std::error_code EC = UnderlyingSolver->powerTwo(BPCs, PCs, LHS, PowerTwo, IC);
+      std::string PowerStr = "false"; // default fact
+      if (!EC) {
+        if (PowerTwo)
+          PowerStr = "true";
+        else
+          PowerStr = "false";
+      }
+      KV->hSet(LHSStr, "power2", PowerStr);
+      return EC;
+    }
   }
 
   std::error_code nonZero(const BlockPCs &BPCs,
                           const std::vector<InstMapping> &PCs,
                           Inst *LHS, bool &NonZero,
                           InstContext &IC) override {
-    return UnderlyingSolver->nonZero(BPCs, PCs, LHS, NonZero, IC);
+    // TODO: caching
+    //return UnderlyingSolver->nonZero(BPCs, PCs, LHS, NonZero, IC);
+    ReplacementContext Context;
+    std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
+    if (LHSStr.length() > MaxLHSSize)
+      return std::make_error_code(std::errc::value_too_large);
+    std::string NZero;
+    if (KV->hGet(LHSStr, "nonzero", NZero)) {
+      if (NZero == "true")
+        NonZero = true;
+      else // for Power = "false" or "" (default is false)
+        NonZero = false;
+      return std::error_code();
+    } else {
+      std::error_code EC = UnderlyingSolver->nonZero(BPCs, PCs, LHS, NonZero, IC);
+      std::string NonZeroStr = "false"; // default fact
+      if (!EC) {
+        if (NonZero)
+          NonZeroStr = "true";
+        else
+          NonZeroStr = "false";
+      }
+      KV->hSet(LHSStr, "nonzero", NonZeroStr);
+      return EC;
+    }
   }
 
   std::error_code signBits(const BlockPCs &BPCs,
                            const std::vector<InstMapping> &PCs,
                            Inst *LHS, unsigned &SignBits,
                            InstContext &IC) override {
-    return UnderlyingSolver->signBits(BPCs, PCs, LHS, SignBits, IC);
+    // TODO: caching
+    //return UnderlyingSolver->signBits(BPCs, PCs, LHS, SignBits, IC);
+    ReplacementContext Context;
+    std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
+    if (LHSStr.length() > MaxLHSSize)
+      return std::make_error_code(std::errc::value_too_large);
+    std::string SBits;
+    if (KV->hGet(LHSStr, "signbits", SBits)) {
+      if (SBits == "")
+        SignBits = 1;
+      else
+        SignBits = std::stoul (SBits, nullptr, 10);
+      return std::error_code();
+    } else {
+      std::error_code EC = UnderlyingSolver->signBits(BPCs, PCs, LHS, SignBits, IC);
+      std::string SignBitsStr;
+      if (!EC) {
+        if (SignBits > 1)
+          SignBitsStr = std::to_string(SignBits);
+        else
+          SignBitsStr = "1";
+      }
+      KV->hSet(LHSStr, "signbits", SignBitsStr);
+      return EC;
+    }
   }
 
 };
