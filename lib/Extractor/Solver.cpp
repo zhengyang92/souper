@@ -847,12 +847,8 @@ public:
     } else {
       std::error_code EC = UnderlyingSolver->nonNegative(BPCs, PCs, LHS, NonNegative, IC);
       std::string NonNegStr = "false"; // default fact
-      if (!EC) {
-        if (NonNegative)
-          NonNegStr = "true";
-        else
-          NonNegStr = "false";
-      }
+      if (NonNegative)
+        NonNegStr = "true";
       KV->hSet(LHSStr, "non-negative", NonNegStr);
       return EC;
     }
@@ -876,12 +872,8 @@ public:
     } else {
       std::error_code EC = UnderlyingSolver->negative(BPCs, PCs, LHS, Negative, IC);
       std::string NegStr = "false"; // default fact
-      if (!EC) {
-        if (Negative)
-          NegStr = "true";
-        else
-          NegStr = "false";
-      }
+      if (Negative)
+        NegStr = "true";
       KV->hSet(LHSStr, "negative", NegStr);
       return EC;
     }
@@ -903,8 +895,7 @@ public:
     } else {
       std::error_code EC = UnderlyingSolver->knownBits(BPCs, PCs, LHS, Known, IC);
       std::string KnownStr = getDefaultKBStr(LHS->Width);
-      if (!EC)
-        KnownStr = getKnownBitsStr(Known.Zero, Known.One);
+      KnownStr = getKnownBitsStr(Known.Zero, Known.One);
       KV->hSet(LHSStr, "knownbits", KnownStr);
       return EC;
     }
@@ -930,12 +921,8 @@ public:
     } else {
       std::error_code EC = UnderlyingSolver->powerTwo(BPCs, PCs, LHS, PowerTwo, IC);
       std::string PowerStr = "false"; // default fact
-      if (!EC) {
-        if (PowerTwo)
-          PowerStr = "true";
-        else
-          PowerStr = "false";
-      }
+      if (PowerTwo)
+        PowerStr = "true";
       KV->hSet(LHSStr, "power2", PowerStr);
       return EC;
     }
@@ -961,12 +948,8 @@ public:
     } else {
       std::error_code EC = UnderlyingSolver->nonZero(BPCs, PCs, LHS, NonZero, IC);
       std::string NonZeroStr = "false"; // default fact
-      if (!EC) {
-        if (NonZero)
-          NonZeroStr = "true";
-        else
-          NonZeroStr = "false";
-      }
+      if (NonZero)
+        NonZeroStr = "true";
       KV->hSet(LHSStr, "nonzero", NonZeroStr);
       return EC;
     }
@@ -991,13 +974,9 @@ public:
       return std::error_code();
     } else {
       std::error_code EC = UnderlyingSolver->signBits(BPCs, PCs, LHS, SignBits, IC);
-      std::string SignBitsStr;
-      if (!EC) {
-        if (SignBits > 1)
-          SignBitsStr = std::to_string(SignBits);
-        else
-          SignBitsStr = "1";
-      }
+      std::string SignBitsStr  = "1";;
+      if (SignBits > 1)
+        SignBitsStr = std::to_string(SignBits);
       KV->hSet(LHSStr, "signbits", SignBitsStr);
       return EC;
     }
