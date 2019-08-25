@@ -184,17 +184,22 @@ public:
                           Inst *LHS, KnownBits &Known,
                           InstContext &IC) override {
     unsigned W = LHS->Width;
+    bool hasError = false;
     Known.One = APInt::getNullValue(W);
     Known.Zero = APInt::getNullValue(W);
     for (unsigned I=0; I<W; I++) {
       APInt ZeroGuess = Known.Zero | APInt::getOneBitSet(W, I);
-      if (testKnown(BPCs, PCs, ZeroGuess, Known.One, LHS, IC)) {
+      if (testKnown(BPCs, PCs, ZeroGuess, Known.One, LHS, hasError, IC)) {
         Known.Zero = ZeroGuess;
+        if (hasError) break;
         continue;
       }
       APInt OneGuess = Known.One | APInt::getOneBitSet(W, I);
-      if (testKnown(BPCs, PCs, Known.Zero, OneGuess, LHS, IC))
+      if (testKnown(BPCs, PCs, Known.Zero, OneGuess, LHS, hasError, IC)) {
         Known.One = OneGuess;
+        if (hasError) break;
+        continue;
+      }
     }
 
     return std::error_code();
@@ -517,6 +522,7 @@ public:
   bool testKnown(const BlockPCs &BPCs,
                  const std::vector<InstMapping> &PCs,
                  APInt &Zeros, APInt &Ones, Inst *LHS,
+                 bool &hasError,
                  InstContext &IC) {
     InstMapping Mapping(IC.getInst(Inst::And, LHS->Width,
                                    { IC.getConst(Zeros | Ones), LHS }),
@@ -526,6 +532,7 @@ public:
     std::error_code EC = SMTSolver->isSatisfiable(Q, IsSat, 0, 0, Timeout);
     if (EC) {
       //llvm::report_fatal_error("Error: SMTSolver->isSatisfiable() failed in testing known bits");
+      hasError = true;
       return false;
     }
     return !IsSat;
@@ -607,26 +614,6 @@ public:
     } else {
       return llvm::ConstantRange (W, true);
     }
-  }
-
-  llvm::KnownBits findKnownBitsUsingSolver(const BlockPCs &BPCs,
-                                           const std::vector<InstMapping> &PCs,
-                                           Inst *LHS, InstContext &IC) override {
-    unsigned W = LHS->Width;
-    auto R = llvm::KnownBits(W);
-    for (unsigned Pos = 0; Pos < W; Pos++) {
-      APInt ZeroGuess = R.Zero | APInt::getOneBitSet(W, Pos);
-      if (testKnown(BPCs, PCs, ZeroGuess, R.One, LHS, IC)) {
-        R.Zero = ZeroGuess;
-	continue;
-      }
-      APInt OneGuess = R.One | APInt::getOneBitSet(W, Pos);
-      if (testKnown(BPCs, PCs, R.Zero, OneGuess, LHS, IC)) {
-	R.One = OneGuess;
-        continue;
-      }
-    }
-    return R;
   }
 
   std::string getName() override {
@@ -712,12 +699,6 @@ public:
       IsValid = ent->second.second;
       return ent->second.first;
     }
-  }
-
-  llvm::KnownBits findKnownBitsUsingSolver(const BlockPCs &BPCs,
-                                           const std::vector<InstMapping> &PCs,
-                                           Inst *LHS, InstContext &IC) override {
-    return UnderlyingSolver->findKnownBitsUsingSolver(BPCs, PCs, LHS, IC);
   }
 
   std::string getName() override {
@@ -840,12 +821,6 @@ public:
     // N.B. we decided that since the important clients have moved to infer(),
     // we'll no longer support external caching for isValid()
     return UnderlyingSolver->isValid(IC, BPCs, PCs, Mapping, IsValid, Model);
-  }
-
-  llvm::KnownBits findKnownBitsUsingSolver(const BlockPCs &BPCs,
-                                           const std::vector<InstMapping> &PCs,
-                                           Inst *LHS, InstContext &IC) override {
-    return UnderlyingSolver->findKnownBitsUsingSolver(BPCs, PCs, LHS, IC);
   }
 
   std::string getName() override {
