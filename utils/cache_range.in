@@ -233,6 +233,7 @@ print "\n\n";
 
 sub go {
     (my $opt, my $counter) = @_;
+    print "LHS Counter = $counter\n";
     my $ret = "";
     $ret .= "$opt";
     $ret .= "\n";
