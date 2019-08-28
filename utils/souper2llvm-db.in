@@ -25,7 +25,7 @@ cand = None
 needsResult = False
 intrdecl = dict()
 printedblocks = []
-labels = ["foo0"]
+labels = ["entry"]
 cnt = 0
 cnt2 = 0
 cnt3 = 0
@@ -149,6 +149,8 @@ def parseInst(i):
         assert 0, "unknown LHS: %s" % i[0]
     return [reg, width, inst, ops]
 
+newlabelcounter = 0
+
 def translateInstToLLVM(i):
     reg, width, inst, ops = i
     s = ""
@@ -158,15 +160,27 @@ def translateInstToLLVM(i):
         if not block in printedblocks:
             printedblocks.append(block)
             global cnt3
-            if cnt3 == 0:
+            t = cnt3
+            blockcount = len(ops[1:])
+            if blockcount == 1:
                 s += "  br label %" + philabel + "\n"
-            else:
+            if blockcount >= 2:
                 s += "  br label %foo" + str(cnt3) + "\n"
+	        global newlabelcounter
+                for i in range(blockcount):
+                    if i == blockcount - 1:
+                        s += "  br label %foo" + str(t) + "\n"
+                    else:
+                        s += "  %sw" +str(newlabelcounter) + " = icmp eq i64 %_phiinput, " + str(newlabelcounter) + "\n"
+                        s += "  br i1 %sw" +str(newlabelcounter) +" , label %nl"+ str(newlabelcounter) +", label %foo" + str(t) + "\n"
+                        s += "nl"+ str(newlabelcounter) +":\n"
+                        newlabelcounter += 1
+                        t += 1
+
+            printedblocks.append(block)
+
             for k in range(len(ops[1:])):
                 # don't print the first label of the func
-                if cnt3 == 0:
-                    cnt3 += 1
-                    continue
                 label = "foo" + str(cnt3)
                 cnt3 += 1
                 labels.append(label)
@@ -267,6 +281,152 @@ def propagateArgNames(insts):
                 ops[k][0] = argmap[op[0]]
         res.append(i)
     return res
+
+# topology sort
+def sort_direct_acyclic_graph(edge_list) :
+    # edge_set is consummed, need a copy
+    edge_set = set([tuple(i) for i in edge_list])
+
+    # node_list will contain the ordered nodes
+    node_list = list()
+
+    # source_set is the set of nodes with no incomming edges
+    node_from_list, node_to_list = zip(* edge_set)
+    source_set = set(node_from_list) - set(node_to_list)
+
+    while len(source_set) != 0 :
+	# pop node_from off source_set and insert it in node_list
+	node_from = source_set.pop()
+	node_list.append(node_from)
+
+	# find nodes which have a common edge with node_from
+	from_selection = [e for e in edge_set if e[0] == node_from]
+	for edge in from_selection :
+	    # remove the edge from the graph
+	    node_to = edge[1]
+	    edge_set.discard(edge)
+
+	    # if node_to don't have any remaining incomming edge :
+	    to_selection = [e for e in edge_set if e[1] == node_to]
+	    if len(to_selection) == 0 :
+		# add node_to to source_set
+		source_set.add(node_to)
+
+    if len(edge_set) != 0 :
+	raise IndexError # not a direct acyclic graph
+    else :
+	return node_list
+
+
+def reorder(insts):
+    early = []
+    pc = []
+    late = []
+    origin_insts = []
+    origin_insts += insts
+
+    for i in insts:
+        if i[2] == 'block':
+            early.append(i)
+        if i[2] == 'pc':
+            pc.append(i)
+        if i[2] == 'cand' or i[2] == 'infer' or i[2] == 'result':
+            late.append(i)
+
+
+    blocks = dict()
+    regmap = getRegMap(insts)
+    # scan for blocks and phis
+    for k in range(len(insts)):
+        i = insts[k]
+        reg, width, inst, ops = i
+        if inst == "block":
+            assert not reg in blocks, "block %s already parsed" % reg
+            blocks[reg] = []
+            # move block def to front
+            insts.insert(0, insts.pop(k))
+        # skip pc/cand/infer/result insts
+        elif inst in specialinsts:
+            pass
+        elif inst == "phi":
+            block = ops[0][0]
+            assert block in blocks, "unknown block %s" % block
+            blocks[block].append(i)
+
+    queue = insts
+    edges = set()
+    visited = []
+
+    #get dependency edges
+    while len(queue):
+        i = queue.pop()
+        reg, width, inst, ops = i
+        new_ops = []
+        if i in visited:
+            continue
+        visited.append(i)
+
+        # put args in new_ops,
+        if inst == "phi":
+            block = ops[0][0]
+            for phi in blocks[block]:
+                for k, op in enumerate(phi[3]):
+                    if k == 0:
+                        continue
+                    if op[0] in regmap:
+                        new_ops.append(regmap[op[0]])
+        else:
+            for k, op in enumerate(ops):
+                if op[0] in regmap:
+                    new_ops.append(regmap[op[0]])
+
+        for k, op in enumerate(new_ops):
+            dep = op[0]
+            # process on each operands
+            if dep[0] == "%" and dep in regmap:
+                op_inst = regmap[dep]
+                if op_inst[2] == "phi":
+                    dep_inst_block = op_inst[3][0][0]
+                    for dep_phi in blocks[dep_inst_block]:
+                        edges.add((reg, dep_phi[0]))
+                        queue.append(regmap[dep_phi[0]])
+                else:
+                    edges.add((reg, regmap[dep][0]))
+                    queue.append(regmap[dep])
+
+    unsorted_dag = []
+    for edge in edges:
+        unsorted_dag.append(edge)
+
+    dag = []
+    if len(edges) != 0:
+        dag = sort_direct_acyclic_graph(unsorted_dag)
+    res = []
+
+    for inst in origin_insts:
+        if inst[2] in specialinsts:
+            continue
+        if inst[0] in dag:
+            continue
+        res.append(inst)
+
+    for v in dag:
+        if regmap[v] in res:
+            continue
+        reg, width, inst, ops = regmap[v]
+        if inst == "phi":
+            block = ops[0][0]
+            for phi in blocks[block]:
+                res.append(phi)
+        else:
+            res.append(regmap[v])
+
+    res.reverse()
+
+    res = early + res + pc + late
+
+    return res
+
 
 def groupPhis(insts):
     blocks = dict()
@@ -380,7 +540,7 @@ def rewriteRegs(insts):
             flagPC = 1
             continue
         # give regs new names
-        newreg = "%" + str(counter)
+        newreg = "%xxx" + str(counter)
         counter += 1
         newregs[reg] = newreg
         widths[newreg] = width
@@ -733,9 +893,9 @@ def printFuncHeader():
     # print args
     for i, reg in enumerate(argmap.values()):
         sys.stdout.write(widths[reg] + " " + regtmps[reg])
-        if i < len(argmap)-1:
-            sys.stdout.write(", ")
-    print ") {"
+        sys.stdout.write(", ")
+
+    print "i64 %_phiinput) {"
     # first label
     print labels[0] + ":"
     print masks
@@ -819,7 +979,7 @@ def printLHSFuncFooter():
 lines = readOpt()
 insts = parseInsts(lines)
 insts = propagateArgNames(insts)
-insts = groupPhis(insts)
+#insts = groupPhis(insts)
 insts = rewriteRegs(insts)
 
 assert cand, "cand inst not found"
