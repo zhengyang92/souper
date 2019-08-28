@@ -236,33 +236,39 @@ public:
     return std::error_code();
   }
 
-  void findVarsAndWidth(Inst *node, std::map<std::string, unsigned> &var_vect) {
+  void findVarsAndWidth(Inst *node, std::map<std::string, unsigned> &var_vect, std::set<Inst *> &Visited) {
+    if (!Visited.insert(node).second)
+      return;
     if (node->K == Inst::Var) {
       std::string name = node->Name;
       //var_vect[name] = node->Width;
       var_vect.insert(std::pair<std::string, unsigned>(name, node->Width));
     }
     for (auto const &Op : node->Ops) {
-      findVarsAndWidth(Op, var_vect);
+      findVarsAndWidth(Op, var_vect, Visited);
     }
   }
 
   void findMoreVarsViaPC(Inst *node,
-                        std::map<std::string, unsigned> &var_vect) {
+                         std::map<std::string, unsigned> &var_vect, std::set<Inst *> &Visited) {
+    if (!Visited.insert(node).second)
+      return;
     if (node->K == Inst::Var) {
       std::string name = node->Name;
       //var_vect[name] = node->Width;
       var_vect.insert(std::pair<std::string, unsigned>(name, node->Width));
     }
     for (auto const &Op : node->Ops) {
-      findMoreVarsViaPC(Op, var_vect);
+      findMoreVarsViaPC(Op, var_vect, Visited);
     }
   }
 
-  Inst * set_traverse(Inst *node, unsigned bitPos, InstContext &IC, std::string var_name) {
+  Inst * set_traverse(Inst *node, unsigned bitPos, InstContext &IC, std::string var_name, std::map<Inst *, Inst *> &InstCache) {
+    if (InstCache.count(node))
+      return InstCache.at(node);
     std::vector<Inst *> Ops;
     for (auto const &Op : node->Ops) {
-      Ops.push_back(set_traverse(Op, bitPos, IC, var_name));
+      Ops.push_back(set_traverse(Op, bitPos, IC, var_name, InstCache));
     }
 
     Inst *Copy = nullptr;
@@ -273,9 +279,9 @@ public:
 
       Copy = SetMask;
     } else if (node->K == Inst::Var && node->Name != var_name) {
-      return node;
+      Copy = node;
     } else if (node->K == Inst::Const || node->K == Inst::UntypedConst) {
-      return node;
+      Copy = node;
     } else if (node->K == Inst::Phi) {
       //      auto BlockCopy = IC.createBlock(node->B->Preds);
       Copy = IC.getPhi(node->B, Ops);
@@ -283,14 +289,16 @@ public:
       Copy = IC.getInst(node->K, node->Width, Ops);
     }
     assert(Copy);
-
+    InstCache[node] = Copy;
     return Copy;
   }
 
-  Inst * clear_traverse(Inst *node, unsigned bitPos, InstContext &IC, std::string var_name) {
+  Inst * clear_traverse(Inst *node, unsigned bitPos, InstContext &IC, std::string var_name, std::map<Inst *, Inst *> &InstCache) {
+    if (InstCache.count(node))
+      return InstCache.at(node);
     std::vector<Inst *> Ops;
     for (auto const &Op : node->Ops) {
-      Ops.push_back(clear_traverse(Op, bitPos, IC, var_name));
+      Ops.push_back(clear_traverse(Op, bitPos, IC, var_name, InstCache));
     }
 
     Inst *Copy = nullptr;
@@ -301,9 +309,9 @@ public:
 
       Copy = SetMask;
     } else if (node->K == Inst::Var && node->Name != var_name) {
-      return node;
+      Copy = node;
     } else if (node->K == Inst::Const || node->K == Inst::UntypedConst) {
-      return node;
+      Copy = node;
     } else if (node->K == Inst::Phi) {
       //      auto BlockCopy = IC.createBlock(node->B->Preds);
       Copy = IC.getPhi(node->B, Ops);
@@ -311,7 +319,7 @@ public:
       Copy = IC.getInst(node->K, node->Width, Ops);
     }
     assert(Copy);
-
+    InstCache[node] = Copy;
     return Copy;
   }
 
@@ -361,11 +369,14 @@ public:
     std::map<Block *, Block *> BlockCache;
 
     std::map<std::string, unsigned> vars_vect;
-    findVarsAndWidth(LHS, vars_vect);
+    std::set<Inst *> Visited;
+    findVarsAndWidth(LHS, vars_vect, Visited);
 
     for (auto const &PC : PCs) {
-      findMoreVarsViaPC(PC.LHS, vars_vect);
-      findMoreVarsViaPC(PC.RHS, vars_vect);
+      Visited.clear();
+      findMoreVarsViaPC(PC.LHS, vars_vect, Visited);
+      Visited.clear();
+      findMoreVarsViaPC(PC.RHS, vars_vect, Visited);
     }
 
     // for each var
@@ -378,8 +389,10 @@ public:
 
       // for each bit of var
       for (unsigned bit=0; bit<var_width; bit++) {
-        Inst *SetLHS = set_traverse(LHS, bit, IC, var_name);
-        Inst *ClearLHS = clear_traverse(LHS, bit, IC, var_name);
+        std::map<Inst *, Inst *> InstCache;
+        Inst *SetLHS = set_traverse(LHS, bit, IC, var_name, InstCache);
+        InstCache.clear();
+        Inst *ClearLHS = clear_traverse(LHS, bit, IC, var_name, InstCache);
         if (testDB(BPCs, PCs, LHS, SetLHS, IC) && testDB(BPCs, PCs, LHS, ClearLHS, IC)) {
           // not-demanded
           ResultDB = ResultDB;
