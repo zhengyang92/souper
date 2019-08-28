@@ -165,7 +165,6 @@ def translateInstToLLVM(i):
             if blockcount == 1:
                 s += "  br label %" + philabel + "\n"
             if blockcount >= 2:
-                s += "  br label %foo" + str(cnt3) + "\n"
 	        global newlabelcounter
                 for i in range(blockcount):
                     if i == blockcount - 1:
@@ -980,6 +979,7 @@ lines = readOpt()
 insts = parseInsts(lines)
 insts = propagateArgNames(insts)
 #insts = groupPhis(insts)
+insts = reorder(insts)
 insts = rewriteRegs(insts)
 
 assert cand, "cand inst not found"

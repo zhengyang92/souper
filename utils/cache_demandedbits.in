@@ -234,6 +234,7 @@ print "\n\n";
 
 sub go {
     (my $opt, my $counter) = @_;
+    print "LHS Counter = $counter\n";
     my $ret = "";
     $ret .= "$opt";
     $ret .= "\n";
@@ -324,7 +325,7 @@ sub wait_for_one() {
 }
 
 my $counter=0;
-foreach my $opt (sort bysprofile keys %toprint) {
+foreach my $opt (sort bylen keys %toprint) {
     $counter++;
     wait_for_one() unless $num_running < $NPROCS;
     die unless $num_running < $NPROCS;
