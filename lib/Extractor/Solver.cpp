@@ -277,8 +277,8 @@ public:
     } else if (node->K == Inst::Const || node->K == Inst::UntypedConst) {
       return node;
     } else if (node->K == Inst::Phi) {
-      auto BlockCopy = IC.createBlock(node->B->Preds);
-      Copy = IC.getPhi(BlockCopy, Ops);
+      //      auto BlockCopy = IC.createBlock(node->B->Preds);
+      Copy = IC.getPhi(node->B, Ops);
     } else {
       Copy = IC.getInst(node->K, node->Width, Ops);
     }
@@ -305,8 +305,8 @@ public:
     } else if (node->K == Inst::Const || node->K == Inst::UntypedConst) {
       return node;
     } else if (node->K == Inst::Phi) {
-      auto BlockCopy = IC.createBlock(node->B->Preds);
-      Copy = IC.getPhi(BlockCopy, Ops);
+      //      auto BlockCopy = IC.createBlock(node->B->Preds);
+      Copy = IC.getPhi(node->B, Ops);
     } else {
       Copy = IC.getInst(node->K, node->Width, Ops);
     }
