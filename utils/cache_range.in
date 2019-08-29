@@ -83,6 +83,7 @@ sub souper_known ($) {
     close INF;
     close $fh;
     unlink $tmpfn;
+    print $opt if not defined $k;
     return $k;
 }
 
@@ -221,6 +222,7 @@ sub llvm_known($) {
 	}
     }
     close INF;
+    print $opt if not defined $known;
     return $known if defined $known;
     return "oops";
 }
