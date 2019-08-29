@@ -48,8 +48,7 @@ std::string getDefaultKBStr(unsigned size) {
   return S;
 }
 
-llvm::APInt getKnownZeroFromStr(std::string S, unsigned W) {
-  APInt Zero = APInt::getNullValue(W);
+void getKnownZeroFromStr(std::string S, llvm::APInt &Zero, unsigned W) {
   for (int K = W - 1; K >= 0; --K) {
      int J = W - 1 - K;
      if (S[K] == '0')
@@ -57,11 +56,9 @@ llvm::APInt getKnownZeroFromStr(std::string S, unsigned W) {
      else
        Zero.clearBit(J);
    }
-   return Zero;
 }
 
-llvm::APInt getKnownOneFromStr(std::string S, unsigned W) {
-  APInt One = APInt::getNullValue(W);
+void getKnownOneFromStr(std::string S, llvm::APInt &One, unsigned W) {
   for (int K = W - 1; K >= 0; --K) {
      int J = W - 1 - K;
      if (S[K] == '1')
@@ -69,10 +66,9 @@ llvm::APInt getKnownOneFromStr(std::string S, unsigned W) {
      else
        One.clearBit(J);
    }
-   return One;
 }
 
-std::string getKnownBitsStr(llvm::APInt Zero, llvm::APInt One) {
+std::string getKnownBitsStr(llvm::APInt &Zero, llvm::APInt &One) {
   std::string Str = "";
   for (int K = Zero.getBitWidth() - 1; K >= 0; --K) {
     if (Zero[K] && One[K])
@@ -185,18 +181,18 @@ public:
                           InstContext &IC) override {
     unsigned W = LHS->Width;
     bool hasError = false;
-    Known.One = APInt::getNullValue(W);
-    Known.Zero = APInt::getNullValue(W);
+    //    Known.One = APInt::getNullValue(W);
+    //    Known.Zero = APInt::getNullValue(W);
     for (unsigned I=0; I<W; I++) {
       APInt ZeroGuess = Known.Zero | APInt::getOneBitSet(W, I);
       if (testKnown(BPCs, PCs, ZeroGuess, Known.One, LHS, hasError, IC)) {
-        Known.Zero = ZeroGuess;
+        Known.Zero.setBit(I);
         if (hasError) break;
         continue;
       }
       APInt OneGuess = Known.One | APInt::getOneBitSet(W, I);
       if (testKnown(BPCs, PCs, Known.Zero, OneGuess, LHS, hasError, IC)) {
-        Known.One = OneGuess;
+        Known.One.setBit(I);
         if (hasError) break;
         continue;
       }
@@ -889,8 +885,8 @@ public:
       return std::make_error_code(std::errc::value_too_large);
     std::string K;
     if (KV->hGet(LHSStr, "knownbits", K)) {
-      Known.Zero = getKnownZeroFromStr(K, LHS->Width);
-      Known.One = getKnownOneFromStr(K, LHS->Width);
+      getKnownZeroFromStr(K, Known.Zero, LHS->Width);
+      getKnownOneFromStr(K, Known.One, LHS->Width);
       return std::error_code();
     } else {
       std::error_code EC = UnderlyingSolver->knownBits(BPCs, PCs, LHS, Known, IC);
