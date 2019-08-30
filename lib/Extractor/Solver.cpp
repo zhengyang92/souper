@@ -365,6 +365,11 @@ public:
                               Inst *LHS, std::map<std::string, APInt> &ResDB_vect,
                               InstContext &IC) override {
     unsigned W = LHS->Width;
+
+    if (!LHS->DemandedBits.isAllOnesValue()) {
+      LHS = IC.getInst(Inst::And, W, {LHS, IC.getConst(LHS->DemandedBits)});
+    }
+
     std::map<Inst *, Inst *> InstCache;
     std::map<Block *, Block *> BlockCache;
 
@@ -405,6 +410,7 @@ public:
       // verify if LHS has non-AllOnes demanded bits,
       // and, ResultDB for a variable has 1 in any bit-position for
       // which LHS->DB has 0 in it, conclude the bit to be non-demanded.
+      /*
       if (!LHS->DemandedBits.isAllOnesValue()) {
         for (unsigned J=0; J<var_width; ++J) {
           if (ResultDB[J] == 1 && LHS->DemandedBits[J] == 0) {
@@ -413,6 +419,7 @@ public:
           }
         }
       }
+      */
 
       ResDB_vect[var_name] = ResultDB;
     }
