@@ -703,6 +703,8 @@ public:
                               ConstSet, ResultMap, IC, /*MaxTries=*/30, Timeout, true);
       if (EC == std::errc::result_out_of_range)
         llvm::report_fatal_error("Error: Constant synthesize reached MAX_TRIES(30), which might leads to imprecise results");
+      if (EC)
+        llvm::report_fatal_error("Error: Constant synthesis failure");
     } else {
       CS.synthesize(SMTSolver.get(), BPCs, PCs, InstMapping(Guess, IC.getConst(APInt(1, true))),
                     ConstSet, ResultMap, IC, /*MaxTries=*/30, Timeout);
