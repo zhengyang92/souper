@@ -183,6 +183,11 @@ public:
     bool hasError = false;
     //    Known.One = APInt::getNullValue(W);
     //    Known.Zero = APInt::getNullValue(W);
+    Known.resetAll();
+    // TODO FIXME
+    if (W != Known.getBitWidth()) {
+      return std::error_code();
+    }
     for (unsigned I=0; I<W; I++) {
       APInt ZeroGuess = Known.Zero | APInt::getOneBitSet(W, I);
       if (testKnown(BPCs, PCs, ZeroGuess, Known.One, LHS, hasError, IC)) {
