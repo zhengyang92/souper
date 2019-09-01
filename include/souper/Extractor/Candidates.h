@@ -142,16 +142,15 @@ struct ExprBuilderS {
   bool isLoopEntryPoint(PHINode *Phi);
   Inst *makeArrayRead(Value *V);
   Inst *buildConstant(Constant *c);
-  Inst *buildGEP(Inst *Ptr, gep_type_iterator begin, gep_type_iterator end);
-  Inst *build(Value *V, APInt DemandedBits);
-  Inst *buildHelper(Value *V);
-  void addPC(BasicBlock *BB, BasicBlock *Pred, std::vector<InstMapping> &PCs);
-  void addPathConditions(BlockPCs &BPCs, std::vector<InstMapping> &PCs,
+  Inst *build(Value *V, APInt DemandedBits, unsigned depth);
+  Inst *buildHelper(Value *V, unsigned depth);
+  //  void addPC(BasicBlock *BB, BasicBlock *Pred, std::vector<InstMapping> &PCs);
+  /*  void addPathConditions(BlockPCs &BPCs, std::vector<InstMapping> &PCs,
                          std::unordered_set<Block *> &VisitedBlocks,
-                         BasicBlock *BB);
-  Inst *get(Value *V, APInt DemandedBits);
-  Inst *get(Value *V);
-  Inst *getFromUse(Value *V);
+                         BasicBlock *BB);*/
+  //o  Inst *get(Value *V, APInt DemandedBits);
+  Inst *get(Value *V, unsigned depth);
+  //  Inst *getFromUse(Value *V);
   void markExternalUses(Inst *I);
 };
 

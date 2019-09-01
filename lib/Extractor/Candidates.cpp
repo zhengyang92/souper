@@ -209,33 +209,6 @@ Inst *ExprBuilderS::buildConstant(Constant *c) {
   }
 }
 
-Inst *ExprBuilderS::buildGEP(Inst *Ptr, gep_type_iterator begin,
-                            gep_type_iterator end) {
-  unsigned PSize = DL.getPointerSizeInBits();
-  for (auto i = begin; i != end; ++i) {
-    if (StructType *ST = i.getStructTypeOrNull()) {
-      const StructLayout *SL = DL.getStructLayout(ST);
-      ConstantInt *CI = cast<ConstantInt>(i.getOperand());
-      uint64_t Addend = SL->getElementOffset((unsigned) CI->getZExtValue());
-      if (Addend != 0) {
-        Ptr = IC.getInst(Inst::Add, PSize,
-                         {Ptr, IC.getConst(APInt(PSize, Addend))});
-      }
-    } else {
-      SequentialType *SET = cast<SequentialType>(i.getIndexedType());
-      uint64_t ElementSize =
-        DL.getTypeStoreSize(SET->getElementType());
-      Value *Operand = i.getOperand();
-      Inst *Index = get(Operand);
-      if (PSize > Index->Width)
-        Index = IC.getInst(Inst::SExt, PSize, {Index});
-      Inst *Addend = IC.getInst(
-          Inst::Mul, PSize, {Index, IC.getConst(APInt(PSize, ElementSize))});
-      Ptr = IC.getInst(Inst::Add, PSize, {Ptr, Addend});
-    }
-  }
-  return Ptr;
-}
 
 void ExprBuilderS::markExternalUses (Inst *I) {
   std::map<Inst *, unsigned> UsesCount;
@@ -266,20 +239,23 @@ void ExprBuilderS::markExternalUses (Inst *I) {
         I->DepsWithExternalUses.insert(U.first);
 }
 
-Inst *ExprBuilderS::build(Value *V, APInt DemandedBits) {
-  Inst *I = buildHelper(V);
+Inst *ExprBuilderS::build(Value *V, APInt DemandedBits, unsigned depth) {
+  Inst *I = buildHelper(V, depth);
   I->DemandedBits = DemandedBits;
   return I;
 }
 
-Inst *ExprBuilderS::buildHelper(Value *V) {
+static constexpr unsigned MAX_DEPTH = 10;
+Inst *ExprBuilderS::buildHelper(Value *V, unsigned Depth) {
+  if (Depth >= MAX_DEPTH)
+    return makeArrayRead(V);
   if (auto C = dyn_cast<Constant>(V)) {
     return buildConstant(C);
   } else if (auto ICI = dyn_cast<ICmpInst>(V)) {
     if (!isa<IntegerType>(ICI->getType()))
       return makeArrayRead(V); // could be a vector operation
 
-    Inst *L = get(ICI->getOperand(0)), *R = get(ICI->getOperand(1));
+    Inst *L = get(ICI->getOperand(0), Depth + 1), *R = get(ICI->getOperand(1), Depth + 1);
     switch (ICI->getPredicate()) {
       case ICmpInst::ICMP_EQ:
         return IC.getInst(Inst::Eq, 1, {L, R});
@@ -307,12 +283,8 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
   } else if (auto BO = dyn_cast<BinaryOperator>(V)) {
     if (!isa<IntegerType>(BO->getType()))
       return makeArrayRead(V); // could be a vector operation
-    if (BO == BO->getOperand(0))
-      return makeArrayRead(V); // could be a vector operation
-    if (BO == BO->getOperand(1))
-      return makeArrayRead(V); // could be a vector operation
 
-    Inst *L = get(BO->getOperand(0)), *R = get(BO->getOperand(1));
+    Inst *L = get(BO->getOperand(0), Depth + 1), *R = get(BO->getOperand(1), Depth + 1);
     Inst::Kind K;
     switch (BO->getOpcode()) {
       case Instruction::Add:
@@ -408,8 +380,8 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
     if (Sel == Sel->getFalseValue())
       return makeArrayRead(V); // could be a vector operation
 
-    Inst *C = get(Sel->getCondition()), *T = get(Sel->getTrueValue()),
-         *F = get(Sel->getFalseValue());
+    Inst *C = get(Sel->getCondition(), Depth + 1), *T = get(Sel->getTrueValue(), Depth + 1),
+      *F = get(Sel->getFalseValue(), Depth + 1);
     if (T && C && F)
       return IC.getInst(Inst::Select, T->Width, {C, T, F});
     return makeArrayRead(V);
@@ -417,7 +389,7 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
     if (Cast == Cast->getOperand(0))
       return makeArrayRead(V); // could be a vector operation
 
-    Inst *Op = get(Cast->getOperand(0));
+    Inst *Op = get(Cast->getOperand(0), Depth + 1);
     unsigned DestSize = DL.getTypeSizeInBits(Cast->getType());
 
     switch (Cast->getOpcode()) {
@@ -478,7 +450,7 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
         }
         std::vector<Inst *> Incomings;
         for (auto Pred : BI.Preds) {
-          Incomings.push_back(get(Phi->getIncomingValueForBlock(Pred)));
+          Incomings.push_back(get(Phi->getIncomingValueForBlock(Pred), Depth + 1));
         }
         return IC.getPhi(BI.B, Incomings);
       } else {
@@ -489,7 +461,7 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
     if (EV == EV->getOperand(0))
       return makeArrayRead(V); // could be a vector operation
 
-    Inst *L = get(EV->getOperand(0));
+    Inst *L = get(EV->getOperand(0), Depth + 1);
     ArrayRef<unsigned> Idx = EV->getIndices();
     // NOTE: extractvalue instruction can take set of indices. Most of the
     // times we just pass one index value, i.e. why I am extracting 0th index
@@ -519,13 +491,13 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
       if (II == II->getOperand(0))
         return makeArrayRead(V); // could be a vector operation
 
-      Inst *L = get(II->getOperand(0));
+      Inst *L = get(II->getOperand(0), Depth + 1);
       Inst *R = nullptr;
       if (II->getNumOperands() > 1) {
         if (II == II->getOperand(1))
           return makeArrayRead(V); // could be a vector operation
 
-        R = get(II->getOperand(1));
+        R = get(II->getOperand(1), Depth + 1);
       }
 
       switch (II->getIntrinsicID()) {
@@ -543,7 +515,7 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
           return IC.getInst(Inst::Ctlz, L->Width, {L});
         case Intrinsic::fshl:
         case Intrinsic::fshr: {
-          Inst *ShAmt = get(II->getOperand(2));
+          Inst *ShAmt = get(II->getOperand(2), Depth + 1);
           Inst::Kind K =
               II->getIntrinsicID() == Intrinsic::fshl ? Inst::FShl : Inst::FShr;
           return IC.getInst(K, L->Width, {/*High=*/L, /*Low=*/R, ShAmt});
@@ -597,7 +569,7 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
       if(F && TLI->getLibFunc(*F, Func) && TLI->has(Func)) {
         switch (Func) {
           case LibFunc_abs: {
-            Inst *A = get(Call->getOperand(0));
+            Inst *A = get(Call->getOperand(0), Depth + 1);
             Inst *Z = IC.getConst(APInt(A->Width, 0));
             Inst *NegA = IC.getInst(Inst::SubNSW, A->Width, {Z, A}, /*Available=*/false);
             Inst *Cmp = IC.getInst(Inst::Slt, 1, {Z, A}, /*Available=*/false);
@@ -614,7 +586,7 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
 
   return makeArrayRead(V);
 }
-
+/*
 Inst *ExprBuilderS::get(Value *V, APInt DemandedBits) {
   // Cache V if V is not found in InstMap
   Inst *&E = EBC.InstMap[V];
@@ -623,8 +595,9 @@ Inst *ExprBuilderS::get(Value *V, APInt DemandedBits) {
   if (E->K != Inst::Const && !E->hasOrigin(V))
     E->Origins.push_back(V);
   return E;
-}
+  }*/
 
+/*
 Inst *ExprBuilderS::getFromUse(Value *V) {
   // Do not find from cache
   unsigned Width = DL.getTypeSizeInBits(V->getType());
@@ -634,7 +607,8 @@ Inst *ExprBuilderS::getFromUse(Value *V) {
     E->Origins.push_back(V);
   return E;
 }
-
+*/
+/*
 Inst *ExprBuilderS::get(Value *V) {
   // Cache V if V is not found in InstMap
   Inst *&E = EBC.InstMap[V];
@@ -646,7 +620,21 @@ Inst *ExprBuilderS::get(Value *V) {
   if (E->K != Inst::Const && !E->hasOrigin(V))
     E->Origins.push_back(V);
   return E;
+  }*/
+
+Inst *ExprBuilderS::get(Value *V, unsigned depth) {
+  // Cache V if V is not found in InstMap
+  Inst *&E = EBC.InstMap[V];
+  if (!E) {
+    unsigned Width = DL.getTypeSizeInBits(V->getType());
+    APInt DemandedBits = APInt::getAllOnesValue(Width);
+    E = build(V, DemandedBits, depth);
+  }
+  if (E->K != Inst::Const && !E->hasOrigin(V))
+    E->Origins.push_back(V);
+  return E;
 }
+
 
 void emplace_back_dedup(std::vector<InstMapping> &PCs, Inst *LHS, Inst *RHS) {
   for (auto &i : PCs)
@@ -655,6 +643,7 @@ void emplace_back_dedup(std::vector<InstMapping> &PCs, Inst *LHS, Inst *RHS) {
   PCs.emplace_back(LHS, RHS);
 }
 
+/*
 void ExprBuilderS::addPC(BasicBlock *BB, BasicBlock *Pred,
                         std::vector<InstMapping> &PCs) {
   if (auto Branch = dyn_cast<BranchInst>(Pred->getTerminator())) {
@@ -678,7 +667,7 @@ void ExprBuilderS::addPC(BasicBlock *BB, BasicBlock *Pred,
       }
     }
   }
-}
+  }*/
 
 // Collect path conditions for a basic block.
 // There are two kinds of path conditions, which correspond to
@@ -732,6 +721,7 @@ void ExprBuilderS::addPC(BasicBlock *BB, BasicBlock *Pred,
 // blockpc %B9, 1, s4, r4 // B6 -> B8
 // ...
 // cand %i, 1
+/*
 void ExprBuilderS::addPathConditions(BlockPCs &BPCs,
                                     std::vector<InstMapping> &PCs,
                                     std::unordered_set<Block *> &VisitedBlocks,
@@ -777,7 +767,7 @@ void ExprBuilderS::addPathConditions(BlockPCs &BPCs,
     }
   }
 }
-
+*/
 namespace {
 
 typedef llvm::EquivalenceClasses<Inst *> InstClasses;
@@ -858,6 +848,7 @@ std::tuple<BlockPCs, std::vector<InstMapping>> GetRelevantPCs(
   return std::make_tuple(RelevantBPCs, RelevantPCs);
 }
 
+#if (false)
 void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
                            LazyValueInfo *LVI, ScalarEvolution *SE,
                            TargetLibraryInfo *TLI,
@@ -869,7 +860,7 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
   for (auto &BB : F) {
     std::unique_ptr<BlockCandidateSet> BCS(new BlockCandidateSet);
     for (auto &I : BB) {
-#if (false)
+
       if (isa<ReturnInst>(I)) {
         if (PrintNegAtReturn) {
           auto V = I.getOperand(0);
@@ -925,7 +916,7 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
             llvm::outs() << "known signBits from compiler: 1\n";
         }
       }
-#endif
+
       // Harvest Uses (Operands)
       if (HarvestUses) {
         std::unordered_set<llvm::Instruction *> Visited;
@@ -948,7 +939,6 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
           }
         }
       }
-
       // Harvest Defs
       if (!I.getType()->isIntegerTy())
         continue;
@@ -984,7 +974,9 @@ void ExtractExprCandidates(Function &F, const LoopInfo *LI, DemandedBits *DB,
     }
   }
 }
+#endif
 
+#if (false)
 class ExtractExprCandidatesPass : public FunctionPass {
   static char ID;
   const ExprBuilderOptions &Opts;
@@ -1027,9 +1019,10 @@ public:
 };
 
 char ExtractExprCandidatesPass::ID = 0;
-
+#endif
 }
 
+#if (false)
 FunctionCandidateSet souper::ExtractCandidatesFromPass(
     Function *F, const LoopInfo *LI, DemandedBits *DB, LazyValueInfo *LVI,
     ScalarEvolution *SE, TargetLibraryInfo *TLI, InstContext &IC,
@@ -1038,6 +1031,7 @@ FunctionCandidateSet souper::ExtractCandidatesFromPass(
   ExtractExprCandidates(*F, LI, DB, LVI, SE, TLI, Opts, IC, EBC, Result);
   return Result;
 }
+#endif
 
 /*
 FunctionCandidateSet souper::ExtractCandidates(Function *F, InstContext &IC,
