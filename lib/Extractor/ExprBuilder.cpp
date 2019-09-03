@@ -68,13 +68,13 @@ bool ExprBuilder::getUBPaths(Inst *I, UBPath *Current,
   if (I->K == Inst::Phi) {
     // Early terminate because this phi has been processed.
     // We will use its cached predicates.
-    if (CachedUBPathInsts.count(I))
-      return true;
+    /*    if (CachedUBPathInsts.count(I))
+          return true;*/
     Current->Insts.push_back(I);
     // Since we treat a select instruction as a phi instruction, it's
     // possible that I->B has been added already.
-    if (Current->BlockConstraints.count(I->B))
-      return true;
+    /*    if (Current->BlockConstraints.count(I->B))
+          return true;*/
     std::vector<UBPath *> Tmp = { Current };
     // Create copies of the current path
     for (unsigned J = 1; J < Ops.size(); ++J) {
@@ -94,8 +94,8 @@ bool ExprBuilder::getUBPaths(Inst *I, UBPath *Current,
   } else if (I->K == Inst::Select) {
     // Early terminate because this phi has been processed.
     // We will use its cached predicates.
-    if (CachedUBPathInsts.count(I))
-      return true;
+    /*    if (CachedUBPathInsts.count(I))
+          return true;*/
     Current->Insts.push_back(I);
     // Current is the predicate operand branch
     std::vector<UBPath *> Tmp = { Current };
@@ -279,8 +279,8 @@ Inst *ExprBuilder::getUBInstCondition(Inst *Root) {
   auto UBExprMap = getUBInstConstraints(Root);
   // For each Phi/Select instruction
   for (const auto &I : getUBPathInsts(Root)) {
-    if (CachedUBPathInsts.count(I) != 0)
-      continue;
+    /*  if (CachedUBPathInsts.count(I) != 0)
+          continue;*/
     // Recursively collect UB instructions
     // on the block constrained Phi and Select branches
     std::vector<std::unique_ptr<UBPath>> UBPaths;
@@ -380,7 +380,7 @@ Inst *ExprBuilder::getDataflowConditions(Inst *I) {
   if (!I->Range.isEmptySet() && !I->Range.isFullSet()) {
     Inst *Lower = LIC->getConst(I->Range.getLower());
     Inst *Upper = LIC->getConst(I->Range.getUpper());
- 
+
     if (!I->Range.isWrappedSet()) {
       Result = LIC->getInst(Inst::And, 1, {Result, LIC->getInst(Inst::And, 1,
                             {LIC->getInst(Inst::Ule, 1, {Lower, I}),
@@ -395,11 +395,11 @@ Inst *ExprBuilder::getDataflowConditions(Inst *I) {
   return Result;
 }
 
-// Similar to the way we collect UB constraints. We could combine it with 
-// getUBInstCondition, because the workflow is quite similar. 
+// Similar to the way we collect UB constraints. We could combine it with
+// getUBInstCondition, because the workflow is quite similar.
 // However, mixing two parts (one for UB constraints, one for BlockPCs)
 // may make the code less structured. If we see big performance overhead,
-// we may consider to combine these two parts together. 
+// we may consider to combine these two parts together.
 Inst *ExprBuilder::getBlockPCs(Inst *Root) {
 
   UBPathInstMap CachedPhis;
@@ -457,8 +457,8 @@ Inst *ExprBuilder::createUBPathInstsPred(
     if (PathInst->Ops.size() == 1)
       continue;
     Inst *InstPred = createPathPred(BlockConstraints, PathInst, SelectBranches);
-
-    UBPathInstMap::iterator PI = CachedUBPathInsts.find(PathInst);
+    UBPathInstMap::iterator PI = CachedUBPathInsts.end();
+    //    UBPathInstMap::iterator PI = CachedUBPathInsts.find(PathInst);
     if (PI == CachedUBPathInsts.end()) {
        CachedUBPathInsts[PathInst] = {};
        PI = CachedUBPathInsts.find(PathInst);
