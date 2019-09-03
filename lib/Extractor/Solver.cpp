@@ -185,9 +185,6 @@ public:
     //    Known.Zero = APInt::getNullValue(W);
     Known.resetAll();
     // TODO FIXME
-    if (W != Known.getBitWidth()) {
-      return std::error_code();
-    }
     for (unsigned I=0; I<W; I++) {
       APInt ZeroGuess = Known.Zero | APInt::getOneBitSet(W, I);
       if (testKnown(BPCs, PCs, ZeroGuess, Known.One, LHS, hasError, IC)) {
@@ -884,6 +881,9 @@ public:
                             const std::vector<InstMapping> &PCs,
                             Inst *LHS, KnownBits &Known,
                             InstContext &IC) override {
+    if (LHS->Width != Known.getBitWidth()) {
+      return std::error_code();
+    }
     ReplacementContext Context;
     std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
     if (LHSStr.length() > MaxLHSSize)
