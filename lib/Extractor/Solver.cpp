@@ -879,6 +879,8 @@ public:
                             const std::vector<InstMapping> &PCs,
                             Inst *LHS, KnownBits &Known,
                             InstContext &IC) override {
+    if (LHS->Width != Known.getBitWidth())
+      return std::error_code();
     ReplacementContext Context;
     std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
     if (LHSStr.length() > MaxLHSSize)
