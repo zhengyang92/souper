@@ -41,6 +41,22 @@ STATISTIC(ExternalMisses, "Number of external cache misses");
 using namespace souper;
 using namespace llvm;
 
+std::string getRangeStr(llvm::APInt Low, llvm::APInt Up) {
+  return "[" + Low.toString(10, /*Signed=*/false) + "," +
+         Up.toString(10, false) + ")";
+}
+
+llvm::APInt getLowerOfRange(std::string R, unsigned W) {
+  std::string low = R.substr(1, R.find(",") - 1);
+  // convert to APInt
+  return llvm::APInt(W, StringRef(low), 10);
+}
+
+llvm::APInt getUpperBoundOfRange(std::string R, unsigned W) {
+  std::string upper = R.substr(R.find(",")+1, (R.find(")")+1) - (R.find(",")+1) + 1);
+  return llvm::APInt(W, StringRef(upper), 10);
+}
+
 std::string getDefaultKBStr(unsigned size) {
   std::string S = "";
   for (int I = 0; I < size; ++I)
@@ -807,7 +823,24 @@ public:
                                     const std::vector<InstMapping> &PCs,
                                     Inst *LHS,
                                     InstContext &IC) override {
-    // TODO: caching
+#if 0
+    ReplacementContext Context;
+    std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
+//    if (LHSStr.length() > MaxLHSSize)
+//      return std::make_error_code(std::errc::value_too_large);
+    std::string R;
+
+    if (KV->hGet(LHSStr, "range", R)) {
+      return llvm::ConstantRange(getLowerOfRange(R, LHS->Width),
+                                 getUpperBoundOfRange(R, LHS->Width));
+    } else {
+      llvm::ConstantRange CR = UnderlyingSolver->constantRange(BPCs, PCs, LHS, IC);
+      std::string RangeStr = "[-1,-1)"; // default is a full set
+      RangeStr = getRangeStr(CR.getLower(), CR.getUpper());
+      KV->hSet(LHSStr, "range", RangeStr);
+      return CR;
+    }
+#endif
     return UnderlyingSolver->constantRange(BPCs, PCs, LHS, IC);
   }
 
@@ -881,9 +914,8 @@ public:
                             const std::vector<InstMapping> &PCs,
                             Inst *LHS, KnownBits &Known,
                             InstContext &IC) override {
-    if (LHS->Width != Known.getBitWidth()) {
+    if (LHS->Width != Known.getBitWidth())
       return std::error_code();
-    }
     ReplacementContext Context;
     std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
     if (LHSStr.length() > MaxLHSSize)
@@ -1009,3 +1041,4 @@ std::unique_ptr<Solver> createExternalCachingSolver(
 }
 
 }
+
