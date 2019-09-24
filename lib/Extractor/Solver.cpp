@@ -823,7 +823,6 @@ public:
                                     const std::vector<InstMapping> &PCs,
                                     Inst *LHS,
                                     InstContext &IC) override {
-#if 0
     ReplacementContext Context;
     std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
 //    if (LHSStr.length() > MaxLHSSize)
@@ -840,7 +839,6 @@ public:
       KV->hSet(LHSStr, "range", RangeStr);
       return CR;
     }
-#endif
     return UnderlyingSolver->constantRange(BPCs, PCs, LHS, IC);
   }
 
