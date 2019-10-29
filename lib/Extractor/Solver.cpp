@@ -41,6 +41,22 @@ STATISTIC(ExternalMisses, "Number of external cache misses");
 using namespace souper;
 using namespace llvm;
 
+std::string getRangeStr(llvm::APInt Low, llvm::APInt Up) {
+  return "[" + Low.toString(10, /*Signed=*/false) + "," +
+         Up.toString(10, false) + ")";
+}
+
+llvm::APInt getLowerBoundOfRange(std::string R, unsigned W) {
+  std::string low = R.substr(1, R.find(",") - 1);
+  // convert to APInt
+  return llvm::APInt(W, StringRef(low), 10);
+}
+
+llvm::APInt getUpperBoundOfRange(std::string R, unsigned W) {
+  std::string upper = R.substr(R.find(",")+1, (R.find(")")) - (R.find(",")+1));
+  return llvm::APInt(W, StringRef(upper), 10);
+}
+
 std::string getDefaultKBStr(unsigned size) {
   std::string S = "";
   for (int I = 0; I < size; ++I)
@@ -850,6 +866,14 @@ public:
     return UnderlyingSolver->nonNegative(BPCs, PCs, LHS, NonNegative, IC);
   }
 
+  std::error_code testDemandedBits(const BlockPCs &BPCs,
+                                   const std::vector<InstMapping> &PCs,
+                                   Inst *LHS,
+                                   std::map<std::string,APInt> &DBitsVect,
+                                   InstContext &IC) override {
+    return UnderlyingSolver->testDemandedBits(BPCs, PCs, LHS, DBitsVect, IC);
+  }
+
   std::error_code negative(const BlockPCs &BPCs,
                            const std::vector<InstMapping> &PCs,
                            Inst *LHS, bool &Negative,
@@ -948,7 +972,19 @@ public:
                                     Inst *LHS,
                                     InstContext &IC) override {
     // TODO: caching
-    return UnderlyingSolver->constantRange(BPCs, PCs, LHS, IC);
+    ReplacementContext Context;
+    std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
+    std::string R;
+    //if (KV->hGet(LHSStr, "range", R)) {
+    //  return llvm::ConstantRange(getLowerBoundOfRange(R, LHS->Width),
+    //                             getUpperBoundOfRange(R, LHS->Width));
+    //} else {
+      llvm::ConstantRange CR = UnderlyingSolver->constantRange(BPCs, PCs, LHS, IC);
+      std::string RangeStr = "[-1,-1)"; // default is a full set
+      RangeStr = getRangeStr(CR.getLower(), CR.getUpper());
+      KV->hSet(LHSStr, "range", RangeStr);
+      return CR;
+    //}
   }
 
   std::error_code isValid(InstContext &IC, const BlockPCs &BPCs,
@@ -990,6 +1026,14 @@ public:
       KV->hSet(LHSStr, "non-negative", NonNegStr);
       return EC;
     }
+  }
+  
+  std::error_code testDemandedBits(const BlockPCs &BPCs,
+                                   const std::vector<InstMapping> &PCs,
+                                   Inst *LHS,
+                                   std::map<std::string, APInt> &DBitsVect,
+                                   InstContext &IC) override {
+    return UnderlyingSolver->testDemandedBits(BPCs, PCs, LHS, DBitsVect, IC);
   }
 
   std::error_code negative(const BlockPCs &BPCs,
