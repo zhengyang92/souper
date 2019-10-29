@@ -307,6 +307,10 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
   } else if (auto BO = dyn_cast<BinaryOperator>(V)) {
     if (!isa<IntegerType>(BO->getType()))
       return makeArrayRead(V); // could be a vector operation
+    if (BO == BO->getOperand(0))
+      return makeArrayRead(V); // could be a vector operation
+    if (BO == BO->getOperand(1))
+      return makeArrayRead(V); // could be a vector operation
 
     Inst *L = get(BO->getOperand(0)), *R = get(BO->getOperand(1));
     Inst::Kind K;
@@ -397,12 +401,22 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
   } else if (auto Sel = dyn_cast<SelectInst>(V)) {
     if (!isa<IntegerType>(Sel->getType()))
       return makeArrayRead(V); // could be a vector operation
+    if (Sel == Sel->getCondition())
+      return makeArrayRead(V); // could be a vector operation
+    if (Sel == Sel->getTrueValue())
+      return makeArrayRead(V); // could be a vector operation
+    if (Sel == Sel->getFalseValue())
+      return makeArrayRead(V); // could be a vector operation
+
     Inst *C = get(Sel->getCondition()), *T = get(Sel->getTrueValue()),
          *F = get(Sel->getFalseValue());
     if (T && C && F)
       return IC.getInst(Inst::Select, T->Width, {C, T, F});
     return makeArrayRead(V);
   } else if (auto Cast = dyn_cast<CastInst>(V)) {
+    if (Cast == Cast->getOperand(0))
+      return makeArrayRead(V); // could be a vector operation
+
     Inst *Op = get(Cast->getOperand(0));
     unsigned DestSize = DL.getTypeSizeInBits(Cast->getType());
 
@@ -472,6 +486,9 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
       }
     }
   } else if (auto EV = dyn_cast<ExtractValueInst>(V)) {
+    if (EV == EV->getOperand(0))
+      return makeArrayRead(V); // could be a vector operation
+
     Inst *L = get(EV->getOperand(0));
     ArrayRef<unsigned> Idx = EV->getIndices();
     // NOTE: extractvalue instruction can take set of indices. Most of the
@@ -499,10 +516,17 @@ Inst *ExprBuilderS::buildHelper(Value *V) {
     LibFunc Func;
 
     if (auto II = dyn_cast<IntrinsicInst>(Call)) {
+      if (II == II->getOperand(0))
+        return makeArrayRead(V); // could be a vector operation
+
       Inst *L = get(II->getOperand(0));
       Inst *R = nullptr;
-      if (II->getNumOperands() > 1)
+      if (II->getNumOperands() > 1) {
+        if (II == II->getOperand(1))
+          return makeArrayRead(V); // could be a vector operation
+
         R = get(II->getOperand(1));
+      }
 
       switch (II->getIntrinsicID()) {
         default:

@@ -96,9 +96,9 @@ void KVStore::KVImpl::hSet(llvm::StringRef Key, llvm::StringRef Field,
     llvm::report_fatal_error((llvm::StringRef)"Redis error: " + Ctx->errstr);
   }
   if (reply->type != REDIS_REPLY_INTEGER) {
-    llvm::report_fatal_error(
+    /*    llvm::report_fatal_error(
         "Redis protocol error for cache fill, didn't expect reply type " +
-        std::to_string(reply->type));
+        std::to_string(reply->type));*/
   }
   freeReplyObject(reply);
 }
