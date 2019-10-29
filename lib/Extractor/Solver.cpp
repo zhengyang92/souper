@@ -977,16 +977,16 @@ public:
     ReplacementContext Context;
     std::string LHSStr = GetReplacementLHSString(BPCs, PCs, LHS, Context);
     std::string R;
-    //if (KV->hGet(LHSStr, "range", R)) {
-    //  return llvm::ConstantRange(getLowerBoundOfRange(R, LHS->Width),
-    //                             getUpperBoundOfRange(R, LHS->Width));
-    //} else {
+    if (KV->hGet(LHSStr, "range", R)) {
+      return llvm::ConstantRange(getLowerBoundOfRange(R, LHS->Width),
+                                 getUpperBoundOfRange(R, LHS->Width));
+    } else {
       llvm::ConstantRange CR = UnderlyingSolver->constantRange(BPCs, PCs, LHS, IC);
       std::string RangeStr = "[-1,-1)"; // default is a full set
       RangeStr = getRangeStr(CR.getLower(), CR.getUpper());
       KV->hSet(LHSStr, "range", RangeStr);
       return CR;
-    //}
+    }
   }
 
   std::error_code isValid(InstContext &IC, const BlockPCs &BPCs,
