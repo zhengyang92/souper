@@ -25,6 +25,7 @@
 #include "souper/Tool/CandidateMapUtils.h"
 #include "souper/Tool/GetSolverFromArgs.h"
 
+#if (false)
 using namespace llvm;
 using namespace souper;
 
@@ -103,3 +104,5 @@ int main(int argc, char **argv) {
     llvm::errs() << MB.getError().message() << '\n';
   }
 }
+#endif
+int main() {return 0;}
