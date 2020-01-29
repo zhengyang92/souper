@@ -1058,8 +1058,6 @@ void souper::findCands(Inst *Root, std::vector<Inst *> &Guesses,
     Inst *I = Q.front();
     Q.pop();
     if (Visited.insert(I).second) {
-      for (auto Op : I->Ops)
-        Q.push(Op);
       if (I->Available && I->K != Inst::Const
           && I->K != Inst::UntypedConst) {
         if (WidthMustMatch && I->Width != Root->Width)
@@ -1073,6 +1071,8 @@ void souper::findCands(Inst *Root, std::vector<Inst *> &Guesses,
         Guesses.emplace_back(I);
         if (Guesses.size() >= Max)
           return;
+        for (auto Op : I->Ops)
+          Q.push(Op);
       }
     }
   }
