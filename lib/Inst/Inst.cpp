@@ -1266,7 +1266,11 @@ void souper::separateBlockPCs(const BlockPCs &BPCs, BlockPCs &BPCsCopy,
   for (const auto &BPC : BPCs) {
     auto BPCCopy = BPC;
     assert(BPC.B);
-    assert(BlockCache[BPC.B]);
+    if (!BlockCache.count(BPC.B)) {
+      auto BlockCopy = IC.createBlock(BPC.B->Preds);
+      BlockCache[BPC.B] = BlockCopy;
+    }
+
     BPCCopy.B = BlockCache[BPC.B];
     BPCCopy.PC = InstMapping(getInstCopy(BPC.PC.LHS, IC, InstCache, BlockCache,
                                          ConstMap, CloneVars),
